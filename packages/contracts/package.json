@@ -1,0 +1,26 @@
+{
+  "name": "@shadow/contracts",
+  "version": "0.1.0",
+  "description": "Shadow smart contracts for Yellow Network integration",
+  "main": "index.js",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network yellowTestnet",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "node": "hardhat node",
+    "clean": "hardhat clean"
+  },
+  "keywords": ["shadow", "yellow-network", "state-channels", "copy-trading"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.1",
+    "hardhat": "^2.19.4",
+    "dotenv": "^16.3.1"
+  },
+  "dependencies": {
+    "@ensdomains/ens-contracts": "^1.0.0"
+  }
+}

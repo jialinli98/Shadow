@@ -1,0 +1,29 @@
+{
+  "name": "shadow-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private copy trading on Yellow Network state channels - HackMoney 2026",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "contracts:build": "npm run build --workspace=packages/contracts",
+    "contracts:test": "npm run test --workspace=packages/contracts",
+    "contracts:deploy": "npm run deploy --workspace=packages/contracts",
+    "relay:dev": "npm run dev --workspace=packages/relay",
+    "relay:build": "npm run build --workspace=packages/relay",
+    "relay:test": "npm run test --workspace=packages/relay",
+    "frontend:dev": "npm run dev --workspace=packages/frontend",
+    "frontend:build": "npm run build --workspace=packages/frontend",
+    "dev": "npm run contracts:build && concurrently \"npm run relay:dev\" \"npm run frontend:dev\"",
+    "test": "npm run contracts:test && npm run relay:test",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/build packages/contracts/artifacts packages/contracts/cache"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
