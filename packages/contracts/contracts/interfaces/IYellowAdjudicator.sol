@@ -58,6 +58,26 @@ interface IYellowAdjudicator {
         bytes[] memory signatures
     ) external;
 
+    /**
+     * @notice Verify a final state with signature
+     * @param channelId The channel identifier
+     * @param nonce The state nonce
+     * @param signature The signature to verify
+     * @return valid True if signature is valid for final state
+     */
+    function verifyFinalState(
+        bytes32 channelId,
+        uint256 nonce,
+        bytes memory signature
+    ) external view returns (bool valid);
+
+    /**
+     * @notice Check if a channel has been finalized
+     * @param channelId The channel identifier
+     * @return finalized True if channel is closed/finalized
+     */
+    function isChannelFinalized(bytes32 channelId) external view returns (bool finalized);
+
     event ChannelClosed(bytes32 indexed channelId, uint256[] finalBalances);
     event StateChallenged(bytes32 indexed channelId, uint256 nonce);
 }

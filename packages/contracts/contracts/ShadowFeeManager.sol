@@ -235,4 +235,31 @@ contract ShadowFeeManager is IShadowFeeManager, Ownable, ReentrancyGuard {
         require(_feeToken != address(0), "Invalid token");
         feeToken = IERC20(_feeToken);
     }
+
+    /**
+     * @notice Process copier fee from Uniswap settlement hook
+     * @dev Called by ShadowSettlementHook after swap execution
+     * @param copier The copier's address
+     * @param leader The leader's address
+     * @param feeAmount Fee amount to process
+     */
+    function processCopierFee(
+        address copier,
+        address leader,
+        uint256 feeAmount
+    ) external nonReentrant {
+        require(feeAmount > 0, "Invalid fee amount");
+        require(registry.isRegistered(leader), "Leader not registered");
+
+        // Transfer fee from copier to this contract
+        feeToken.safeTransferFrom(copier, address(this), feeAmount);
+
+        // Accumulate fees for leader
+        accumulatedFees[leader] += feeAmount;
+        registry.addFeesEarned(leader, feeAmount);
+
+        emit FeeProcessed(leader, copier, feeAmount);
+    }
+
+    event FeeProcessed(address indexed leader, address indexed copier, uint256 feeAmount);
 }

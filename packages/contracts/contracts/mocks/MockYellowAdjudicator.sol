@@ -10,6 +10,7 @@ import "../interfaces/IYellowAdjudicator.sol";
 contract MockYellowAdjudicator is IYellowAdjudicator {
     mapping(bytes32 => ChannelState) private channels;
     mapping(bytes32 => bool) private channelClosed;
+    mapping(bytes32 => mapping(uint256 => bool)) private stateValid;
 
     function setChannelState(
         bytes32 channelId,
@@ -68,5 +69,26 @@ contract MockYellowAdjudicator is IYellowAdjudicator {
 
     function isChannelClosed(bytes32 channelId) external view returns (bool) {
         return channelClosed[channelId];
+    }
+
+    function verifyFinalState(
+        bytes32 channelId,
+        uint256 nonce,
+        bytes memory signature
+    ) external view override returns (bool valid) {
+        return stateValid[channelId][nonce];
+    }
+
+    function isChannelFinalized(bytes32 channelId) external view override returns (bool finalized) {
+        return channelClosed[channelId];
+    }
+
+    // Helper for testing
+    function setStateValid(bytes32 channelId, uint256 nonce, bool valid) external {
+        stateValid[channelId][nonce] = valid;
+    }
+
+    function setChannelFinalized(bytes32 channelId, bool finalized) external {
+        channelClosed[channelId] = finalized;
     }
 }
