@@ -148,6 +148,3 @@ See [IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md) for detailed develop
 
 MIT License - see [LICENSE](./LICENSE) file for details
 
----
-
-*Trade without exposing your alpha.*
