@@ -3,6 +3,13 @@ import { useAccount, useReadContract, useWriteContract } from 'wagmi'
 import { formatEther, parseEther } from 'viem'
 import { TrendingUp, Users, DollarSign, Activity } from 'lucide-react'
 import axios from 'axios'
+import TradeExecutor from '../components/TradeExecutor'
+import SettlementPanel from '../components/SettlementPanel'
+import ENSProfileDisplay from '../components/ENSProfileDisplay'
+import ENSMetadata from '../components/ENSMetadata'
+import YellowStateChannelDashboard from '../components/YellowStateChannelDashboard'
+import YellowChannelLifecycle from '../components/YellowChannelLifecycle'
+import YellowBatchSettlement from '../components/YellowBatchSettlement'
 
 const REGISTRY_ADDRESS = (import.meta.env.VITE_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000') as `0x${string}`
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
@@ -34,29 +41,38 @@ export default function LeaderDashboard() {
   })
 
   // Get leader profile if registered
-  const { data: leaderProfile } = useReadContract({
+  const { data: leaderProfile, isError: profileError, isLoading: profileLoading } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: [{
-      name: 'getLeaderProfile',
+      name: 'getLeader',
       type: 'function',
       stateMutability: 'view',
-      inputs: [{ name: 'leader', type: 'address' }],
+      inputs: [{ name: 'leaderAddress', type: 'address' }],
       outputs: [{
         type: 'tuple',
         components: [
+          { name: 'leaderAddress', type: 'address' },
           { name: 'ensName', type: 'string' },
-          { name: 'performanceFee', type: 'uint256' },
+          { name: 'performanceFeeRate', type: 'uint256' },
           { name: 'minCopierDeposit', type: 'uint256' },
+          { name: 'activeCopierCount', type: 'uint256' },
+          { name: 'totalFeesEarned', type: 'uint256' },
+          { name: 'registeredAt', type: 'uint256' },
           { name: 'isActive', type: 'bool' },
-          { name: 'totalCopiers', type: 'uint256' },
-          { name: 'totalVolume', type: 'uint256' },
-          { name: 'feesEarned', type: 'uint256' },
         ],
       }],
     }],
-    functionName: 'getLeaderProfile',
+    functionName: 'getLeader',
     args: address && isRegistered ? [address] : undefined,
   })
+
+  // Debug logging
+  useEffect(() => {
+    if (leaderProfile) {
+      console.log('Leader Profile Data:', leaderProfile)
+      console.log('ENS Name:', (leaderProfile as any)?.ensName)
+    }
+  }, [leaderProfile])
 
   // Register leader
   const { writeContract: registerLeader, isPending: isRegistering } = useWriteContract()
@@ -84,9 +100,9 @@ export default function LeaderDashboard() {
     if (leaderProfile) {
       const profile = leaderProfile as any
       setMetrics({
-        totalCopiers: Number(profile.totalCopiers || profile[4] || 0),
-        totalVolume: formatEther(profile.totalVolume || profile[5] || 0n),
-        feesEarned: formatEther(profile.feesEarned || profile[6] || 0n),
+        totalCopiers: Number(profile.activeCopierCount || profile[4] || 0),
+        totalVolume: '0', // Not tracked on-chain, comes from API
+        feesEarned: formatEther(profile.totalFeesEarned || profile[5] || 0n),
       })
     }
   }, [leaderProfile])
@@ -208,7 +224,9 @@ export default function LeaderDashboard() {
         <h1 className="text-4xl font-bold text-white">Leader Dashboard</h1>
         <div className="text-right">
           <div className="text-sm text-gray-400">ENS Profile</div>
-          <div className="text-lg font-semibold text-white">{(leaderProfile as any)?.ensName || (leaderProfile as any)?.[0] || 'Loading...'}</div>
+          <div className="text-lg font-semibold text-white">
+            {profileLoading ? 'Loading...' : profileError ? 'Error loading profile' : (leaderProfile as any)?.ensName || (leaderProfile as any)?.[1] || 'Unknown'}
+          </div>
         </div>
       </div>
 
@@ -286,19 +304,35 @@ export default function LeaderDashboard() {
         )}
       </div>
 
-      {/* Trade Execution Panel */}
-      <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-lg p-6">
-        <h2 className="text-2xl font-semibold text-white mb-4">Execute Trade</h2>
-        <p className="text-gray-300 mb-4">
-          Trades are executed off-chain in Yellow state channels and automatically replicated to your copiers.
-        </p>
-        <button className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition">
-          Open Trading Interface
-        </button>
-        <p className="text-sm text-gray-400 mt-2">
-          This will connect to the Shadow relay service for private trade execution
-        </p>
+      {/* ENS Profile - Shows ENS Integration */}
+      <ENSProfileDisplay
+        address={address as `0x${string}`}
+        ensName={leaderProfile ? (leaderProfile as any)?.ensName || (leaderProfile as any)?.[1] : undefined}
+      />
+
+      {/* ENS Metadata - Shows ENS Text Records */}
+      {leaderProfile && (leaderProfile as any)?.ensName && (
+        <ENSMetadata
+          ensName={(leaderProfile as any).ensName || (leaderProfile as any)?.[1]}
+          address={address as `0x${string}`}
+          demoMode={true}
+        />
+      )}
+
+      {/* Yellow Network State Channel Dashboard */}
+      <YellowStateChannelDashboard leaderAddress={address || ''} />
+
+      {/* Yellow Network Channel Lifecycle */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <YellowChannelLifecycle />
+        <YellowBatchSettlement />
       </div>
+
+      {/* Trade Execution Panel - Shows Yellow Network */}
+      <TradeExecutor leaderAddress={address || ''} />
+
+      {/* Settlement Panel - Shows Uniswap V4 */}
+      <SettlementPanel />
     </div>
   )
 }

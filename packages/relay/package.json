@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:api": "tsx watch src/api/server.ts",
+    "dev:test": "tsx watch src/api/test-server.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "start:api": "node dist/api/server.js",

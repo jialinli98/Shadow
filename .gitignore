@@ -158,3 +158,5 @@ coverage.json
 Thumbs.db
 
 docs/
+
+*.md

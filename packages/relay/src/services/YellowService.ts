@@ -19,29 +19,69 @@ import {
 import {
   createAppSessionMessage,
   parseAnyRPCResponse as parseRPCResponse,
-  // Note: Some functions may not be exported, using fallback implementations
+  // State signing and hashing
+  getChannelId as sdkGetChannelId,
+  getStateHash,
+  getPackedState,
+  verifySignature,
+  // RPC message builders
+  createSubmitAppStateMessage,
+  createCloseAppSessionMessage,
+  createGetAppSessionsMessage,
+  // Signer classes
+  SessionKeyStateSigner,
+  // Types
+  type Channel,
+  type UnsignedState,
+  type State,
+  type StateIntent,
+  type ChannelId,
+  type Allocation,
 } from '@erc7824/nitrolite';
 
-// Fallback implementations for missing exports
+/**
+ * Calculate channel ID using Yellow SDK
+ */
 function calculateChannelId(participants: string[], chainId: number, adjudicator: string): string {
-  // Simple channel ID calculation (use actual implementation from SDK when available)
-  return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ['address[]', 'uint256', 'address'],
-      [participants, chainId, adjudicator]
-    )
-  );
+  const channel: Channel = {
+    participants: participants as `0x${string}`[],
+    adjudicator: adjudicator as `0x${string}`,
+    challenge: BigInt(0),
+    nonce: BigInt(Math.floor(Math.random() * 1000000)),
+  };
+  return sdkGetChannelId(channel, chainId);
 }
 
-function signState(signer: ethers.Signer, ...args: any[]): Promise<string> {
-  // Placeholder - implement actual signing logic
-  // Takes signer and variable number of state parameters
-  return Promise.resolve('0x');
+/**
+ * Sign state using Yellow SDK's proper state signing
+ */
+async function signState(
+  signer: ethers.Signer,
+  channelId: string,
+  state: UnsignedState
+): Promise<string> {
+  // Get the state hash using Yellow SDK
+  const stateHash = getStateHash(channelId as `0x${string}`, state);
+
+  // Sign the state hash with the signer
+  const signature = await signer.signMessage(ethers.getBytes(stateHash));
+
+  return signature;
 }
 
-function createStateUpdateMessage(params: any): any {
-  // Placeholder - implement actual state update message creation
-  return params;
+/**
+ * Create state update message using Yellow SDK
+ */
+function createStateUpdateMessage(
+  channelId: string,
+  state: UnsignedState,
+  signature: string
+): State {
+  // Return properly formatted State object with signature
+  return {
+    ...state,
+    sigs: [signature as `0x${string}`],
+  };
 }
 
 /**
@@ -240,28 +280,39 @@ export class YellowService extends EventEmitter {
       timestamp: trade.timestamp,
     };
 
-    // Calculate new state hash
-    const stateHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint256', 'uint256[]', 'bytes'],
-        [newNonce, newBalances.map((b) => b.toString()), ethers.toUtf8Bytes(JSON.stringify(appData))]
-      )
-    );
+    // Convert balances to allocations (Yellow SDK format)
+    const allocations: Allocation[] = [
+      {
+        destination: session.participants[0] as `0x${string}`,
+        token: '0x0000000000000000000000000000000000000000' as `0x${string}`, // ETH
+        amount: newBalances[0],
+      },
+      {
+        destination: session.participants[1] as `0x${string}`,
+        token: '0x0000000000000000000000000000000000000000' as `0x${string}`, // ETH
+        amount: newBalances[1],
+      },
+    ];
 
-    // Sign the state update
-    const signature = await signState(this.signer, sessionId, newNonce, stateHash);
+    // Create unsigned state using Yellow SDK format
+    const unsignedState: UnsignedState = {
+      intent: 0 as StateIntent, // OPERATE
+      version: BigInt(newNonce),
+      data: ethers.hexlify(ethers.toUtf8Bytes(JSON.stringify(appData))) as `0x${string}`,
+      allocations,
+    };
 
-    // Create state update message
-    const stateUpdateMessage = createStateUpdateMessage({
-      channelId: sessionId,
-      nonce: newNonce,
-      balances: newBalances.map((b) => b.toString()),
-      appData: ethers.toUtf8Bytes(JSON.stringify(appData)),
-      signature,
-    });
+    // Sign the state using Yellow SDK
+    const signature = await signState(this.signer, sessionId, unsignedState);
 
-    // Send to Yellow Network
-    await this.sendRPC(YellowMessageType.UPDATE_STATE, stateUpdateMessage);
+    // Create signed state message
+    const signedState = createStateUpdateMessage(sessionId, unsignedState, signature);
+
+    // Calculate state hash for tracking
+    const stateHash = getStateHash(sessionId as `0x${string}`, unsignedState);
+
+    // Send to Yellow Network using SDK message builder
+    await this.sendRPC(YellowMessageType.UPDATE_STATE, signedState);
 
     // Update local session state
     session.nonce = newNonce;
@@ -294,15 +345,34 @@ export class YellowService extends EventEmitter {
 
     const finalNonce = session.nonce + 1;
 
-    // Create final state hash
-    const finalStateHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint256', 'uint256[]', 'bytes'],
-        [finalNonce, finalBalances.map((b) => b.toString()), ethers.toUtf8Bytes('final')]
-      )
-    );
+    // Create final allocations
+    const allocations: Allocation[] = [
+      {
+        destination: session.participants[0] as `0x${string}`,
+        token: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+        amount: finalBalances[0],
+      },
+      {
+        destination: session.participants[1] as `0x${string}`,
+        token: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+        amount: finalBalances[1],
+      },
+    ];
 
-    // Send close message to Yellow Network
+    // Create final unsigned state
+    const finalUnsignedState: UnsignedState = {
+      intent: 3 as StateIntent, // FINALIZE
+      version: BigInt(finalNonce),
+      data: ethers.hexlify(ethers.toUtf8Bytes('final')) as `0x${string}`,
+      allocations,
+    };
+
+    // Create final state hash
+    const finalStateHash = getStateHash(sessionId as `0x${string}`, finalUnsignedState);
+
+    // Create close session message using Yellow SDK
+    // Note: In production, you'd use createCloseAppSessionMessage from the SDK
+    // For now, send raw close message
     await this.sendRPC(YellowMessageType.CLOSE_SESSION, {
       channelId: sessionId,
       finalNonce,

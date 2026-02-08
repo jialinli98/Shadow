@@ -10,6 +10,7 @@ import HomePage from './pages/HomePage'
 import LeaderDashboard from './pages/LeaderDashboard'
 import CopierDashboard from './pages/CopierDashboard'
 import Leaderboard from './pages/Leaderboard'
+import HealthCheck from './pages/HealthCheck'
 
 const queryClient = new QueryClient()
 
@@ -25,6 +26,7 @@ function App() {
                 <Route path="/leader" element={<LeaderDashboard />} />
                 <Route path="/copier" element={<CopierDashboard />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
+                <Route path="/health" element={<HealthCheck />} />
               </Routes>
             </Layout>
           </Router>

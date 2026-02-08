@@ -1,0 +1,14 @@
+{
+  "network": "sepolia",
+  "chainId": "11155111",
+  "deployer": "0xE3d560feAa5d3d62e648CD8047b275C4c658ff19",
+  "timestamp": "2026-02-07T20:15:49.260Z",
+  "contracts": {
+    "ShadowRegistry": "0xaad7376A2B7D1a5C3615B969bFf0Ce46B6ac8C9d",
+    "ShadowFeeManager": "0x6bF059D3CC2FCC52bE4f8E12e185dBbab553B62d",
+    "MockYellowAdjudicator": "0x0871952AC5126Bf0E4Ba2a03002e9fE8C39f8418",
+    "MockERC20_USDC": "0x77eB3E04229C2D31d4D8637D18200a18Ff167B5B",
+    "ShadowSettlementHook": "0x5829730e04Fe6C50f8a5A3A8b49E6F28FF146aF8",
+    "MockPoolManager": "0xFAb230A170E5d0EA1Ef8af640371Eca2D864A816"
+  }
+}
