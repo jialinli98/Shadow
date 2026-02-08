@@ -88,7 +88,7 @@
 
 ## 🔐 Privacy-Enhancing Mechanisms
 
-### Information Exposure Reduction ✅
+### Information Exposure Reduction 
 
 **Traditional On-Chain Copy Trading Problems:**
 - Individual trade intentions exposed in mempool → Front-running
