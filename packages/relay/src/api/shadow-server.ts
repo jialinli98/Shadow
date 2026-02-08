@@ -228,7 +228,7 @@ export class ShadowAPIServer {
       try {
         await Promise.race([
           this.yellowService.connect(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 10000))
         ]);
         console.log('✅ Connected to Yellow Network');
       } catch (error) {

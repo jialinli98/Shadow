@@ -367,13 +367,13 @@ export class YellowService extends EventEmitter {
     try {
       const sessionExpireTimestamp = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
 
-      // Match working example's auth params exactly
+      // CRITICAL: Match working example - use wallet.address as application in challenge response!
       const authParams = {
         scope: 'shadow.app',  // Match request scope
-        application: 'Shadow Trading',  // Application name
+        application: this.signer.address,  // Use WALLET ADDRESS (not app name) - this is key!
         participant: this.sessionKey.address,  // Session key as participant
         expire: sessionExpireTimestamp,
-        allowances: [],  // Try empty allowances for sandbox
+        allowances: [],  // Empty for sandbox
         session_key: this.sessionKey.address,
         expires_at: sessionExpireTimestamp,
       };
