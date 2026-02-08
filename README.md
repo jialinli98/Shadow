@@ -23,7 +23,7 @@
 - EIP-712 signed challenges
 - Live state channel operations in relay logs
 
-### ENS Integration ✅
+### ENS Integration 
 
 - **Text Records Used**:
   - `trading.winrate` - Win rate percentage
