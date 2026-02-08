@@ -67,19 +67,67 @@ export function useSocket() {
   }
 
   /**
-   * Join a room for targeted updates
+   * Subscribe to leader updates
    */
-  const joinRoom = (room: string) => {
+  const subscribeToLeader = (leaderAddress: string) => {
     if (!socket) return
-    socket.emit('join-room', room)
+    socket.emit('subscribe-leader', leaderAddress)
   }
 
   /**
-   * Leave a room
+   * Unsubscribe from leader updates
    */
-  const leaveRoom = (room: string) => {
+  const unsubscribeFromLeader = (leaderAddress: string) => {
     if (!socket) return
-    socket.emit('leave-room', room)
+    socket.emit('unsubscribe-leader', leaderAddress)
+  }
+
+  /**
+   * Subscribe to copier updates
+   */
+  const subscribeToCopier = (copierAddress: string) => {
+    if (!socket) return
+    socket.emit('subscribe-copier', copierAddress)
+  }
+
+  /**
+   * Unsubscribe from copier updates
+   */
+  const unsubscribeFromCopier = (copierAddress: string) => {
+    if (!socket) return
+    socket.emit('unsubscribe-copier', copierAddress)
+  }
+
+  /**
+   * Subscribe to price updates for an asset
+   */
+  const subscribeToPrice = (asset: string) => {
+    if (!socket) return
+    socket.emit('subscribe-price', asset)
+  }
+
+  /**
+   * Unsubscribe from price updates
+   */
+  const unsubscribeFromPrice = (asset: string) => {
+    if (!socket) return
+    socket.emit('unsubscribe-price', asset)
+  }
+
+  /**
+   * Get current stats
+   */
+  const getStats = () => {
+    if (!socket) return
+    socket.emit('get-stats')
+  }
+
+  /**
+   * Ping server
+   */
+  const ping = () => {
+    if (!socket) return
+    socket.emit('ping')
   }
 
   return {
@@ -87,8 +135,14 @@ export function useSocket() {
     lastEvent,
     subscribe,
     emit,
-    joinRoom,
-    leaveRoom,
+    subscribeToLeader,
+    unsubscribeFromLeader,
+    subscribeToCopier,
+    unsubscribeFromCopier,
+    subscribeToPrice,
+    unsubscribeFromPrice,
+    getStats,
+    ping,
   }
 }
 
@@ -96,56 +150,84 @@ export function useSocket() {
  * Hook to listen for trade replication events
  */
 export function useTradeEvents(leaderAddress?: string) {
-  const { subscribe, joinRoom, leaveRoom } = useSocket()
+  const { subscribe, subscribeToLeader, unsubscribeFromLeader } = useSocket()
   const [recentTrades, setRecentTrades] = useState<any[]>([])
 
   useEffect(() => {
     if (!leaderAddress) return
 
-    // Join leader's room for targeted updates
-    joinRoom(`leader-${leaderAddress}`)
+    // Subscribe to leader's updates
+    subscribeToLeader(leaderAddress)
 
     // Subscribe to trade events
-    const unsubscribe = subscribe('trade-replicated', (data) => {
-      if (data.leaderAddress === leaderAddress) {
-        setRecentTrades(prev => [data, ...prev].slice(0, 20)) // Keep last 20 trades
+    const unsubTrades = subscribe('trade-replicated', (data) => {
+      if (data.data?.leader === leaderAddress) {
+        setRecentTrades(prev => [data.data, ...prev].slice(0, 20)) // Keep last 20 trades
       }
     })
 
+    const unsubConfirmed = subscribe('trade-confirmed', (data) => {
+      console.log('[Trade] Trade confirmed:', data)
+    })
+
     return () => {
-      leaveRoom(`leader-${leaderAddress}`)
-      unsubscribe?.()
+      unsubscribeFromLeader(leaderAddress)
+      unsubTrades?.()
+      unsubConfirmed?.()
     }
-  }, [leaderAddress])
+  }, [leaderAddress, subscribeToLeader, unsubscribeFromLeader, subscribe])
 
   return recentTrades
 }
 
 /**
- * Hook to listen for risk limit breaches
+ * Hook to listen for drawdown and risk alerts
  */
 export function useRiskAlerts(copierAddress?: string) {
-  const { subscribe, joinRoom, leaveRoom } = useSocket()
+  const { subscribe, subscribeToCopier, unsubscribeFromCopier } = useSocket()
   const [alerts, setAlerts] = useState<any[]>([])
 
   useEffect(() => {
     if (!copierAddress) return
 
-    // Join copier's room for targeted alerts
-    joinRoom(`copier-${copierAddress}`)
+    // Subscribe to copier's updates
+    subscribeToCopier(copierAddress)
 
-    // Subscribe to risk events
-    const unsubscribe = subscribe('risk-limit-breached', (data) => {
-      if (data.copierAddress === copierAddress) {
-        setAlerts(prev => [data, ...prev].slice(0, 10)) // Keep last 10 alerts
+    // Subscribe to drawdown breach events
+    const unsubBreach = subscribe('drawdown-breach', (data) => {
+      if (data.data?.copierAddress === copierAddress) {
+        setAlerts(prev => [
+          {
+            type: 'drawdown-breach',
+            ...data.data,
+            timestamp: data.data?.timestamp || Date.now(),
+          },
+          ...prev,
+        ].slice(0, 10)) // Keep last 10 alerts
+      }
+    })
+
+    // Subscribe to drawdown alert events
+    const unsubAlert = subscribe('drawdown-alert', (data) => {
+      if (data.data) {
+        setAlerts(prev => [
+          {
+            type: 'drawdown-alert',
+            copierAddress,
+            ...data.data,
+            timestamp: data.data?.timestamp || Date.now(),
+          },
+          ...prev,
+        ].slice(0, 10))
       }
     })
 
     return () => {
-      leaveRoom(`copier-${copierAddress}`)
-      unsubscribe?.()
+      unsubscribeFromCopier(copierAddress)
+      unsubBreach?.()
+      unsubAlert?.()
     }
-  }, [copierAddress])
+  }, [copierAddress, subscribeToCopier, unsubscribeFromCopier, subscribe])
 
   return alerts
 }
@@ -178,18 +260,50 @@ export function useSettlementEvents(channelId?: string) {
   const [settlements, setSettlements] = useState<any[]>([])
 
   useEffect(() => {
-    if (!channelId) return
-
-    const unsubscribe = subscribe('session-settled', (data) => {
-      if (data.channelId === channelId) {
-        setSettlements(prev => [data, ...prev])
+    const unsubscribe = subscribe('settlement-completed', (data) => {
+      // If channelId is provided, filter by it; otherwise show all settlements
+      if (!channelId || data.data?.settlementId === channelId) {
+        setSettlements(prev => [data.data, ...prev])
       }
     })
 
     return () => {
       unsubscribe?.()
     }
-  }, [channelId])
+  }, [channelId, subscribe])
 
   return settlements
+}
+
+/**
+ * Hook to listen for price updates
+ */
+export function usePriceUpdates(asset?: string) {
+  const { subscribe, subscribeToPrice, unsubscribeFromPrice } = useSocket()
+  const [prices, setPrices] = useState<Record<string, any>>({})
+
+  useEffect(() => {
+    // Subscribe to specific asset or all price updates
+    if (asset) {
+      subscribeToPrice(asset)
+    }
+
+    const unsubscribe = subscribe('price-update', (data) => {
+      if (!asset || data.data?.asset === asset) {
+        setPrices(prev => ({
+          ...prev,
+          [data.data?.asset]: data.data,
+        }))
+      }
+    })
+
+    return () => {
+      if (asset) {
+        unsubscribeFromPrice(asset)
+      }
+      unsubscribe?.()
+    }
+  }, [asset, subscribe, subscribeToPrice, unsubscribeFromPrice])
+
+  return asset ? prices[asset] : prices
 }

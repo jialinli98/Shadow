@@ -28,6 +28,8 @@ import {
   createSubmitAppStateMessage,
   createCloseAppSessionMessage,
   createGetAppSessionsMessage,
+  // Signer helpers
+  createECDSAMessageSigner,
   // Signer classes
   SessionKeyStateSigner,
   // Types
@@ -37,6 +39,7 @@ import {
   type StateIntent,
   type ChannelId,
   type Allocation,
+  type MessageSigner,
 } from '@erc7824/nitrolite';
 
 /**
@@ -102,6 +105,7 @@ export class YellowService extends EventEmitter {
   private ws: WebSocket | null = null;
   private config: YellowServiceConfig;
   private signer: ethers.Wallet;
+  private messageSigner: MessageSigner;
   private activeSessions: Map<string, YellowAppSession> = new Map();
   private pendingRequests: Map<string, {
     resolve: (value: unknown) => void;
@@ -115,6 +119,13 @@ export class YellowService extends EventEmitter {
     super();
     this.config = config;
     this.signer = new ethers.Wallet(config.signerPrivateKey, config.provider);
+
+    // Create MessageSigner for Yellow Network SDK using private key
+    // Ensure private key has 0x prefix
+    const privateKey = config.signerPrivateKey.startsWith('0x')
+      ? config.signerPrivateKey
+      : `0x${config.signerPrivateKey}`;
+    this.messageSigner = createECDSAMessageSigner(privateKey as `0x${string}`);
   }
 
   /**
@@ -211,48 +222,96 @@ export class YellowService extends EventEmitter {
   }
 
   /**
-   * Create a new app session (state channel) for leader-copier pair
+   * Create a new app session (state channel) between user and market maker
+   *
+   * IMPORTANT: In Shadow's architecture:
+   * - Leader creates channel: Leader ↔ Market Maker
+   * - Copier creates channel: Copier ↔ Market Maker
+   * - NOT: Leader ↔ Copier (that would be wrong!)
    */
   async createSession(
-    leaderAddress: string,
-    copierAddress: string,
+    userAddress: string,
+    marketMakerAddress: string,
     initialDeposits: [bigint, bigint]
   ): Promise<YellowAppSession> {
-    const participants = [leaderAddress, copierAddress];
+    const participants = [userAddress, marketMakerAddress];
 
-    // Calculate channel ID using Yellow SDK
-    const channelId = calculateChannelId(participants, this.config.chainId, this.config.adjudicatorAddress);
-
-    // Create app session message
-    const sessionMessage = (createAppSessionMessage as any)({
-      participants,
-      chainId: this.config.chainId,
-      adjudicator: this.config.adjudicatorAddress,
-      initialBalances: initialDeposits.map((d) => d.toString()),
-      appData: ethers.toUtf8Bytes(JSON.stringify({
-        type: 'shadow-copy-trading',
-        leader: leaderAddress,
-        copier: copierAddress,
-      })),
-    });
-
-    // Send to Yellow Network
-    await this.sendRPC(YellowMessageType.CREATE_SESSION, sessionMessage);
-
-    const session: YellowAppSession = {
-      sessionId: channelId,
-      channelId,
-      participants,
-      nonce: 0,
-      balances: initialDeposits,
-      isActive: true,
-      createdAt: Date.now(),
+    // Create app definition in Yellow Network's required format
+    const appDefinition = {
+      application: 'shadow-trading-v1',  // Custom application identifier
+      protocol: 'NitroRPC/0.2' as const,  // Yellow Network protocol version
+      participants: participants as `0x${string}`[],
+      weights: [50, 50],  // Equal weights for both participants
+      quorum: 100,        // 100% agreement required for state updates
+      challenge: 0,       // No challenge period
+      nonce: Date.now()   // Unique nonce for this session
     };
 
-    this.activeSessions.set(channelId, session);
-    this.emit('session-created', session);
+    // Create allocations in Yellow Network's format
+    const allocations = [
+      {
+        participant: userAddress as `0x${string}`,
+        asset: 'usdc',
+        amount: initialDeposits[0].toString()
+      },
+      {
+        participant: marketMakerAddress as `0x${string}`,
+        asset: 'usdc',
+        amount: initialDeposits[1].toString()
+      }
+    ];
 
-    return session;
+    // Create session message (already formatted and signed by SDK)
+    const sessionMessage = await createAppSessionMessage(
+      this.messageSigner,
+      [{ definition: appDefinition, allocations }]  // Array format required by Yellow
+    );
+
+    // Send directly via WebSocket (Yellow expects raw signed message, not RPC wrapper)
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        console.log('❌ Yellow Network session creation timed out after 30s');
+        reject(new Error('Session creation timeout'));
+      }, 30000);
+
+      // Set up one-time listener for session_created response
+      const handler = (data: WebSocket.Data) => {
+        try {
+          const response = JSON.parse(data.toString());
+          console.log('📨 Received Yellow Network message:', JSON.stringify(response, null, 2));
+
+          if (response.type === 'session_created' || response.method === 'session_created') {
+            console.log('✅ Session created response received!');
+            clearTimeout(timeout);
+            this.ws!.removeListener('message', handler);
+
+            const sessionId = response.sessionId || response.result?.sessionId;
+            const session: YellowAppSession = {
+              sessionId,
+              channelId: sessionId,
+              participants,
+              nonce: 0,
+              balances: initialDeposits,
+              isActive: true,
+              createdAt: Date.now(),
+            };
+
+            this.activeSessions.set(sessionId, session);
+            this.emit('session-created', session);
+
+            resolve(session);
+          }
+        } catch (err) {
+          console.log('⚠️  Failed to parse Yellow Network message:', err);
+        }
+      };
+
+      this.ws!.on('message', handler);
+      console.log('📤 Sending Yellow Network session message...');
+      console.log('   App Definition:', JSON.stringify(appDefinition, null, 2));
+      console.log('   Allocations:', JSON.stringify(allocations, null, 2));
+      this.ws!.send(sessionMessage);  // Send directly without RPC wrapper
+    });
   }
 
   /**

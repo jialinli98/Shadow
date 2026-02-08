@@ -1,60 +1,99 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useWriteContract } from 'wagmi'
-import { formatEther, parseEther } from 'viem'
-import { Search, TrendingUp, TrendingDown, Shield, AlertTriangle } from 'lucide-react'
-import axios from 'axios'
+import { parseEther } from 'viem'
+import { Search, AlertTriangle } from 'lucide-react'
+import { leaderAPI, copierAPI } from '../services/api'
 
 const REGISTRY_ADDRESS = (import.meta.env.VITE_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000') as `0x${string}`
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
-interface Leader {
-  address: string
-  ensName: string
-  performanceFee: number
-  minDeposit: string
+interface LeaderStats {
+  leaderAddress: string
   totalCopiers: number
+  activeCopiers: number
+  totalTrades: number
   totalVolume: string
-  roi: number
+  totalFeesAccumulated: string
+  totalFeesSettled: string
+  totalFeesClaimable: string
+  averageCopierROI: number
+  lastUpdated: number
+}
+
+interface CopierPortfolio {
+  copierAddress: string
+  relationships: Array<{
+    id: string
+    leaderAddress: string
+    copierAddress: string
+    leaderChannelId: string
+    copierChannelId: string
+    performanceFeeRate: number
+    copierInitialDeposit: string
+    maxDrawdown: number
+    isActive: boolean
+    subscribedAt: number
+    lastTradeAt: number | null
+    totalFeesAccumulated: string
+    totalTradesReplicated: number
+    copierTotalPnL: string
+    copierCurrentBalance: string
+  }>
+  totalDeposited: string
+  totalCurrentValue: string
+  totalPnL: string
+  totalFeesOwed: string
+  lastUpdated: number
 }
 
 export default function CopierDashboard() {
   const { address, isConnected } = useAccount()
   const [searchQuery, setSearchQuery] = useState('')
-  const [leaders, setLeaders] = useState<Leader[]>([])
+  const [leaders, setLeaders] = useState<LeaderStats[]>([])
   const [selectedLeader, setSelectedLeader] = useState<string | null>(null)
   const [depositAmount, setDepositAmount] = useState('1000')
   const [maxDrawdown, setMaxDrawdown] = useState(2000) // 20%
-  const [activeSubscription, setActiveSubscription] = useState<any>(null)
+  const [portfolio, setPortfolio] = useState<CopierPortfolio | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Check if copier has active subscription
+  // Fetch copier portfolio
   useEffect(() => {
     if (!address) return
 
-    const fetchSubscription = async () => {
+    const fetchPortfolio = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/copiers/${address}`)
-        setActiveSubscription(response.data)
+        setLoading(true)
+        setError(null)
+        const data = await copierAPI.getPortfolio(address)
+        setPortfolio(data)
       } catch (error) {
         // No active subscription
-        setActiveSubscription(null)
+        setPortfolio(null)
+        setError(null) // Don't show error if no portfolio exists
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchSubscription()
+    fetchPortfolio()
+    const interval = setInterval(fetchPortfolio, 10000) // Update every 10s
+    return () => clearInterval(interval)
   }, [address])
 
   // Fetch available leaders
   useEffect(() => {
     const fetchLeaders = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/leaders`)
-        setLeaders(response.data)
+        const data = await leaderAPI.getAll()
+        setLeaders(data.leaders || [])
       } catch (error) {
         console.error('Failed to fetch leaders:', error)
       }
     }
 
     fetchLeaders()
+    const interval = setInterval(fetchLeaders, 10000) // Update every 10s
+    return () => clearInterval(interval)
   }, [])
 
   // Subscribe to leader
@@ -86,9 +125,12 @@ export default function CopierDashboard() {
   }
 
   const filteredLeaders = leaders.filter(leader =>
-    leader.ensName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    leader.address.toLowerCase().includes(searchQuery.toLowerCase())
+    leader.leaderAddress.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Check if copier has active subscriptions
+  const hasActiveSubscription = portfolio && portfolio.relationships.length > 0
+  const activeRelationship = portfolio?.relationships[0] // For now, show the first one
 
   if (!isConnected) {
     return (
@@ -99,125 +141,122 @@ export default function CopierDashboard() {
     )
   }
 
-  if (activeSubscription) {
+  if (loading && !portfolio) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-gray-400">Loading portfolio...</p>
+      </div>
+    )
+  }
+
+  if (hasActiveSubscription && activeRelationship && portfolio) {
+    const currentPnL = parseFloat(portfolio.totalPnL) / parseFloat(portfolio.totalDeposited) * 100
+    const currentDrawdown = Math.max(0, -currentPnL) // Simple drawdown calculation
+    const currentBalance = parseFloat(activeRelationship.copierCurrentBalance) / 1000000 // Convert to USDC
+
     return (
       <div className="space-y-8">
         <h1 className="text-4xl font-bold text-white">Copier Dashboard</h1>
 
-        {/* Active Subscription */}
+        {/* Portfolio Summary */}
         <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-semibold text-white mb-2">Following: {activeSubscription.leaderEns}</h2>
-              <p className="text-sm text-gray-400 font-mono">{activeSubscription.leaderAddress}</p>
+              <h2 className="text-2xl font-semibold text-white mb-2">Your Copy Trading Portfolio</h2>
+              <p className="text-sm text-gray-400">Following {portfolio.relationships.length} leader{portfolio.relationships.length > 1 ? 's' : ''}</p>
             </div>
             <div className="text-right">
-              <div className="text-sm text-gray-400">Status</div>
-              <span className={`px-3 py-1 text-sm rounded-full ${
-                activeSubscription.isActive
-                  ? 'bg-green-500/20 text-green-500'
-                  : 'bg-red-500/20 text-red-500'
-              }`}>
-                {activeSubscription.isActive ? 'Active' : 'Paused'}
-              </span>
+              <div className="text-sm text-gray-400">Total P&L</div>
+              <div className={`text-2xl font-bold ${currentPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {currentPnL >= 0 ? '+' : ''}{currentPnL.toFixed(2)}%
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatBox
-              label="Your Deposit"
-              value={`${formatEther(activeSubscription.deposit)} USDC`}
+              label="Total Deposited"
+              value={`$${(parseFloat(portfolio.totalDeposited) / 1000000).toFixed(2)}M`}
             />
             <StatBox
-              label="Current P&L"
-              value={`${activeSubscription.currentPnL >= 0 ? '+' : ''}${activeSubscription.currentPnL.toFixed(2)}%`}
-              valueColor={activeSubscription.currentPnL >= 0 ? 'text-green-500' : 'text-red-500'}
+              label="Current Value"
+              value={`$${(parseFloat(portfolio.totalCurrentValue) / 1000000).toFixed(2)}M`}
             />
             <StatBox
-              label="Max Drawdown"
-              value={`${activeSubscription.maxDrawdown / 100}%`}
+              label="Total P&L"
+              value={`$${(parseFloat(portfolio.totalPnL) / 1000000).toFixed(2)}M`}
+              valueColor={parseFloat(portfolio.totalPnL) >= 0 ? 'text-green-500' : 'text-red-500'}
             />
             <StatBox
-              label="Current Drawdown"
-              value={`${activeSubscription.currentDrawdown.toFixed(2)}%`}
-              valueColor={activeSubscription.currentDrawdown > activeSubscription.maxDrawdown / 100 ? 'text-red-500' : 'text-gray-300'}
+              label="Fees Owed"
+              value={`$${(parseFloat(portfolio.totalFeesOwed) / 1000000).toFixed(4)}M`}
             />
           </div>
         </div>
 
-        {/* Risk Status */}
-        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <Shield className="w-5 h-5 mr-2 text-indigo-500" />
-            Risk Status
-          </h3>
-
-          <div className="space-y-3">
-            <RiskIndicator
-              label="Position Size"
-              current={activeSubscription.currentPositionSize}
-              max={activeSubscription.maxPositionSize}
-              unit="USDC"
-            />
-            <RiskIndicator
-              label="Daily Drawdown"
-              current={activeSubscription.dailyDrawdown}
-              max={activeSubscription.maxDailyDrawdown}
-              unit="%"
-              warning={activeSubscription.dailyDrawdown > activeSubscription.maxDailyDrawdown * 0.8}
-            />
-            <RiskIndicator
-              label="Open Positions"
-              current={activeSubscription.openPositions}
-              max={activeSubscription.maxOpenPositions}
-              unit="positions"
-            />
-          </div>
-        </div>
-
-        {/* Recent Trades */}
-        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
-          <h3 className="text-xl font-semibold text-white mb-4">Recent Replicated Trades</h3>
-
-          {activeSubscription.recentTrades?.length === 0 ? (
-            <p className="text-gray-400 text-center py-8">No trades yet</p>
-          ) : (
-            <div className="space-y-3">
-              {activeSubscription.recentTrades?.map((trade: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    {trade.side === 'BUY' ? (
-                      <TrendingUp className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <TrendingDown className="w-5 h-5 text-red-500" />
-                    )}
-                    <div>
-                      <div className="text-white font-semibold">{trade.side} {trade.asset}</div>
-                      <div className="text-sm text-gray-400">
-                        {formatEther(trade.amount)} @ ${trade.price}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-gray-400">{new Date(trade.timestamp).toLocaleString()}</div>
-                    <div className={`text-sm font-semibold ${trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}%
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* Active Subscriptions */}
+        {portfolio.relationships.map((relationship) => (
+          <div key={relationship.id} className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-1">
+                  Following: {relationship.leaderAddress.slice(0, 6)}...{relationship.leaderAddress.slice(-4)}
+                </h3>
+                <p className="text-sm text-gray-400 font-mono">{relationship.leaderAddress}</p>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-gray-400">Status</div>
+                <span className={`px-3 py-1 text-sm rounded-full ${
+                  relationship.isActive
+                    ? 'bg-green-500/20 text-green-500'
+                    : 'bg-red-500/20 text-red-500'
+                }`}>
+                  {relationship.isActive ? 'Active' : 'Paused'}
+                </span>
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Actions */}
-        <div className="flex space-x-4">
-          <button className="px-6 py-3 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition">
-            Pause Copying
-          </button>
-          <button className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition">
-            Unsubscribe & Withdraw
-          </button>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <StatBox
+                label="Your Deposit"
+                value={`$${(parseFloat(relationship.copierInitialDeposit) / 1000000).toFixed(2)}M`}
+              />
+              <StatBox
+                label="Current Balance"
+                value={`$${(parseFloat(relationship.copierCurrentBalance) / 1000000).toFixed(2)}M`}
+              />
+              <StatBox
+                label="P&L"
+                value={`$${(parseFloat(relationship.copierTotalPnL) / 1000000).toFixed(2)}M`}
+                valueColor={parseFloat(relationship.copierTotalPnL) >= 0 ? 'text-green-500' : 'text-red-500'}
+              />
+              <StatBox
+                label="Trades Replicated"
+                value={relationship.totalTradesReplicated.toString()}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Performance Fee</div>
+                <div className="text-lg text-white">{(relationship.performanceFeeRate * 100).toFixed(1)}%</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Max Drawdown</div>
+                <div className="text-lg text-white">{relationship.maxDrawdown.toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {/* Info Box */}
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-white mb-2">How Copy Trading Works</h3>
+          <p className="text-sm text-gray-300">
+            All trades happen off-chain in Yellow Network state channels, ensuring your strategy remains private.
+            Your trades are automatically replicated when the leader executes, proportional to your deposit size.
+            Performance fees are only charged on profits.
+          </p>
         </div>
       </div>
     )
@@ -241,46 +280,54 @@ export default function CopierDashboard() {
 
       {/* Leaders Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {filteredLeaders.map((leader) => (
-          <div
-            key={leader.address}
-            className={`bg-gray-800/50 backdrop-blur-sm border rounded-lg p-6 cursor-pointer transition ${
-              selectedLeader === leader.address
-                ? 'border-indigo-500 ring-2 ring-indigo-500/50'
-                : 'border-gray-700 hover:border-gray-600'
-            }`}
-            onClick={() => setSelectedLeader(leader.address)}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-1">{leader.ensName}</h3>
-                <p className="text-sm text-gray-400 font-mono">{leader.address.slice(0, 10)}...</p>
-              </div>
-              <div className={`text-2xl font-bold ${leader.roi >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {leader.roi >= 0 ? '+' : ''}{leader.roi}%
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <div>
-                <div className="text-xs text-gray-400">Fee</div>
-                <div className="text-sm text-white font-semibold">{leader.performanceFee / 100}%</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400">Min Deposit</div>
-                <div className="text-sm text-white font-semibold">{leader.minDeposit} USDC</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400">Copiers</div>
-                <div className="text-sm text-white font-semibold">{leader.totalCopiers}</div>
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500">
-              Total Volume: {Number(leader.totalVolume).toFixed(2)} USDC
-            </div>
+        {filteredLeaders.length === 0 ? (
+          <div className="col-span-2 text-center py-12 text-gray-400">
+            No leaders found. Try adjusting your search.
           </div>
-        ))}
+        ) : (
+          filteredLeaders.map((leader) => (
+            <div
+              key={leader.leaderAddress}
+              className={`bg-gray-800/50 backdrop-blur-sm border rounded-lg p-6 cursor-pointer transition ${
+                selectedLeader === leader.leaderAddress
+                  ? 'border-indigo-500 ring-2 ring-indigo-500/50'
+                  : 'border-gray-700 hover:border-gray-600'
+              }`}
+              onClick={() => setSelectedLeader(leader.leaderAddress)}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-white mb-1">
+                    {leader.leaderAddress.slice(0, 6)}...{leader.leaderAddress.slice(-4)}
+                  </h3>
+                  <p className="text-sm text-gray-400 font-mono">{leader.leaderAddress.slice(0, 10)}...</p>
+                </div>
+                <div className={`text-2xl font-bold ${leader.averageCopierROI >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {leader.averageCopierROI >= 0 ? '+' : ''}{(leader.averageCopierROI * 100).toFixed(1)}%
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div>
+                  <div className="text-xs text-gray-400">Active Copiers</div>
+                  <div className="text-sm text-white font-semibold">{leader.activeCopiers}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Total Trades</div>
+                  <div className="text-sm text-white font-semibold">{leader.totalTrades}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Total Copiers</div>
+                  <div className="text-sm text-white font-semibold">{leader.totalCopiers}</div>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-500">
+                Total Volume: ${(parseFloat(leader.totalVolume) / 1000000).toFixed(2)}M
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Subscribe Form */}
@@ -301,7 +348,7 @@ export default function CopierDashboard() {
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
               />
               <p className="text-sm text-gray-400 mt-1">
-                Minimum: {leaders.find(l => l.address === selectedLeader)?.minDeposit} USDC
+                Enter your deposit amount in USDC
               </p>
             </div>
 
@@ -357,35 +404,6 @@ function StatBox({ label, value, valueColor = 'text-white' }: { label: string; v
     <div>
       <div className="text-sm text-gray-400 mb-1">{label}</div>
       <div className={`text-lg font-bold ${valueColor}`}>{value}</div>
-    </div>
-  )
-}
-
-function RiskIndicator({ label, current, max, unit, warning = false }: {
-  label: string
-  current: number
-  max: number
-  unit: string
-  warning?: boolean
-}) {
-  const percentage = (current / max) * 100
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-300">{label}</span>
-        <span className={`text-sm font-semibold ${warning ? 'text-yellow-500' : 'text-gray-300'}`}>
-          {current} / {max} {unit}
-        </span>
-      </div>
-      <div className="w-full bg-gray-700 rounded-full h-2">
-        <div
-          className={`h-2 rounded-full transition-all ${
-            percentage > 80 ? 'bg-red-500' : percentage > 60 ? 'bg-yellow-500' : 'bg-green-500'
-          }`}
-          style={{ width: `${Math.min(percentage, 100)}%` }}
-        />
-      </div>
     </div>
   )
 }

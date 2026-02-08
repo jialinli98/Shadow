@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract } from 'wagmi'
 import { formatEther, parseEther } from 'viem'
 import { TrendingUp, Users, DollarSign, Activity } from 'lucide-react'
-import axios from 'axios'
+import { leaderAPI } from '../services/api'
 import TradeExecutor from '../components/TradeExecutor'
 import SettlementPanel from '../components/SettlementPanel'
 import ENSProfileDisplay from '../components/ENSProfileDisplay'
@@ -12,18 +12,20 @@ import YellowChannelLifecycle from '../components/YellowChannelLifecycle'
 import YellowBatchSettlement from '../components/YellowBatchSettlement'
 
 const REGISTRY_ADDRESS = (import.meta.env.VITE_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000') as `0x${string}`
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 export default function LeaderDashboard() {
   const { address, isConnected } = useAccount()
   const [ensName, setEnsName] = useState('')
   const [performanceFee, setPerformanceFee] = useState(1500) // 15%
   const [minDeposit, setMinDeposit] = useState('500')
-  const [activeCopiers, setActiveCopiers] = useState<any[]>([])
+  const [leaderStats, setLeaderStats] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState({
     totalCopiers: 0,
+    activeCopiers: 0,
     totalVolume: '0',
     feesEarned: '0',
+    totalTrades: 0,
   })
 
   // Check if leader is registered
@@ -66,44 +68,49 @@ export default function LeaderDashboard() {
     args: address && isRegistered ? [address] : undefined,
   })
 
-  // Debug logging
-  useEffect(() => {
-    if (leaderProfile) {
-      console.log('Leader Profile Data:', leaderProfile)
-      console.log('ENS Name:', (leaderProfile as any)?.ensName)
-    }
-  }, [leaderProfile])
 
   // Register leader
   const { writeContract: registerLeader, isPending: isRegistering } = useWriteContract()
 
-  // Fetch active copiers from API
+  // Fetch leader stats from new API
   useEffect(() => {
     if (!address || !isRegistered) return
 
-    const fetchCopiers = async () => {
+    const fetchLeaderStats = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/copiers/by-leader/${address}`)
-        setActiveCopiers(response.data)
+        setLoading(true)
+        const stats = await leaderAPI.getProfile(address)
+        setLeaderStats(stats)
+
+        // Update metrics from new API
+        setMetrics({
+          totalCopiers: stats.totalCopiers || 0,
+          activeCopiers: stats.activeCopiers || 0,
+          totalVolume: (parseFloat(stats.totalVolume || '0') / 1000000).toFixed(2),
+          feesEarned: (parseFloat(stats.totalFeesAccumulated || '0') / 1000000).toFixed(2),
+          totalTrades: stats.totalTrades || 0,
+        })
       } catch (error) {
-        console.error('Failed to fetch copiers:', error)
+        console.error('Failed to fetch leader stats:', error)
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchCopiers()
-    const interval = setInterval(fetchCopiers, 5000)
+    fetchLeaderStats()
+    const interval = setInterval(fetchLeaderStats, 10000)
     return () => clearInterval(interval)
   }, [address, isRegistered])
 
-  // Update metrics from contract
+  // Update metrics from contract data (supplement API data)
   useEffect(() => {
     if (leaderProfile) {
       const profile = leaderProfile as any
-      setMetrics({
-        totalCopiers: Number(profile.activeCopierCount || profile[4] || 0),
-        totalVolume: '0', // Not tracked on-chain, comes from API
+      setMetrics(prev => ({
+        ...prev,
+        totalCopiers: Number(profile.activeCopierCount || profile[4] || prev.totalCopiers),
         feesEarned: formatEther(profile.totalFeesEarned || profile[5] || 0n),
-      })
+      }))
     }
   }, [leaderProfile])
 
@@ -231,75 +238,56 @@ export default function LeaderDashboard() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <MetricCard
           icon={<Users className="w-8 h-8 text-indigo-500" />}
-          label="Total Copiers"
-          value={metrics.totalCopiers.toString()}
+          label="Active Copiers"
+          value={`${metrics.activeCopiers} / ${metrics.totalCopiers}`}
+        />
+        <MetricCard
+          icon={<Activity className="w-8 h-8 text-blue-500" />}
+          label="Total Trades"
+          value={metrics.totalTrades.toString()}
         />
         <MetricCard
           icon={<TrendingUp className="w-8 h-8 text-green-500" />}
           label="Total Volume"
-          value={`${Number(metrics.totalVolume).toFixed(2)} USDC`}
+          value={`$${metrics.totalVolume}M`}
         />
         <MetricCard
           icon={<DollarSign className="w-8 h-8 text-purple-500" />}
           label="Fees Earned"
-          value={`${Number(metrics.feesEarned).toFixed(2)} USDC`}
+          value={`$${metrics.feesEarned}M`}
         />
       </div>
 
-      {/* Active Copiers */}
+      {/* Copier Stats */}
       <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
         <h2 className="text-2xl font-semibold text-white mb-6 flex items-center">
-          <Activity className="w-6 h-6 mr-2 text-indigo-500" />
-          Active Copiers
+          <Users className="w-6 h-6 mr-2 text-indigo-500" />
+          Copier Stats
         </h2>
 
-        {activeCopiers.length === 0 ? (
+        {loading ? (
+          <p className="text-gray-400 text-center py-8">Loading copier stats...</p>
+        ) : metrics.totalCopiers === 0 ? (
           <p className="text-gray-400 text-center py-8">No copiers yet. Share your ENS profile to attract followers!</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left border-b border-gray-700">
-                  <th className="pb-3 text-sm font-medium text-gray-400">Address</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Deposit</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Max Drawdown</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Current P&L</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeCopiers.map((copier, index) => (
-                  <tr key={index} className="border-b border-gray-700/50">
-                    <td className="py-4 text-sm font-mono text-white">
-                      {copier.copierAddress.slice(0, 6)}...{copier.copierAddress.slice(-4)}
-                    </td>
-                    <td className="py-4 text-sm text-gray-300">
-                      {formatEther(copier.deposit)} USDC
-                    </td>
-                    <td className="py-4 text-sm text-gray-300">
-                      {copier.maxDrawdown / 100}%
-                    </td>
-                    <td className={`py-4 text-sm font-semibold ${
-                      copier.currentPnL >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`}>
-                      {copier.currentPnL >= 0 ? '+' : ''}{copier.currentPnL.toFixed(2)}%
-                    </td>
-                    <td className="py-4">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        copier.isActive
-                          ? 'bg-green-500/20 text-green-500'
-                          : 'bg-red-500/20 text-red-500'
-                      }`}>
-                        {copier.isActive ? 'Active' : 'Paused'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-gray-700/30 rounded-lg p-4">
+              <div className="text-sm text-gray-400 mb-1">Total Copiers</div>
+              <div className="text-3xl font-bold text-white">{metrics.totalCopiers}</div>
+            </div>
+            <div className="bg-gray-700/30 rounded-lg p-4">
+              <div className="text-sm text-gray-400 mb-1">Active Now</div>
+              <div className="text-3xl font-bold text-green-500">{metrics.activeCopiers}</div>
+            </div>
+            <div className="bg-gray-700/30 rounded-lg p-4">
+              <div className="text-sm text-gray-400 mb-1">Avg Copier ROI</div>
+              <div className={`text-3xl font-bold ${leaderStats?.averageCopierROI >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {leaderStats ? `${(leaderStats.averageCopierROI * 100).toFixed(1)}%` : 'N/A'}
+              </div>
+            </div>
           </div>
         )}
       </div>

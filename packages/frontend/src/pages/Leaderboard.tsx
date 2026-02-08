@@ -1,46 +1,52 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, TrendingDown, Users, DollarSign, Filter, ChevronDown } from 'lucide-react'
-import axios from 'axios'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+import { leaderAPI } from '../services/api'
+import { useLeaderUpdates } from '../hooks/useSocket'
 
 interface LeaderStats {
-  address: string
-  ensName: string
-  performanceFee: number
-  minDeposit: string
+  leaderAddress: string
   totalCopiers: number
-  totalVolume: string
-  feesEarned: string
-  roi: number
-  maxDrawdown: number
-  winRate: number
+  activeCopiers: number
   totalTrades: number
-  avgTradeSize: string
-  isActive: boolean
+  totalVolume: string
+  totalFeesAccumulated: string
+  totalFeesSettled: string
+  totalFeesClaimable: string
+  averageCopierROI: number
+  lastUpdated: number
 }
 
-type SortField = 'roi' | 'totalCopiers' | 'totalVolume' | 'winRate'
+type SortField = 'averageCopierROI' | 'totalCopiers' | 'totalVolume' | 'totalTrades'
 type SortOrder = 'asc' | 'desc'
 
 export default function Leaderboard() {
   const navigate = useNavigate()
   const [leaders, setLeaders] = useState<LeaderStats[]>([])
-  const [sortField, setSortField] = useState<SortField>('roi')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [sortField, setSortField] = useState<SortField>('averageCopierROI')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [minROI, setMinROI] = useState(-100)
-  const [maxFee, setMaxFee] = useState(3000)
+  const [maxFee, setMaxFee] = useState(50) // 50% max
   const [showFilters, setShowFilters] = useState(false)
+
+  // Real-time updates for new leaders
+  const newLeaders = useLeaderUpdates()
 
   // Fetch leaders from API
   useEffect(() => {
     const fetchLeaders = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/leaders`)
-        setLeaders(response.data)
-      } catch (error) {
-        console.error('Failed to fetch leaders:', error)
+        setLoading(true)
+        setError(null)
+        const data = await leaderAPI.getAll()
+        setLeaders(data.leaders || [])
+      } catch (err) {
+        console.error('Failed to fetch leaders:', err)
+        setError('Failed to load leaders')
+      } finally {
+        setLoading(false)
       }
     }
 
@@ -48,6 +54,13 @@ export default function Leaderboard() {
     const interval = setInterval(fetchLeaders, 10000) // Update every 10s
     return () => clearInterval(interval)
   }, [])
+
+  // Refetch when new leaders are registered
+  useEffect(() => {
+    if (newLeaders.length > 0) {
+      leaderAPI.getAll().then(data => setLeaders(data.leaders || []))
+    }
+  }, [newLeaders])
 
   // Sort leaders
   const sortedLeaders = [...leaders].sort((a, b) => {
@@ -65,7 +78,7 @@ export default function Leaderboard() {
 
   // Filter leaders
   const filteredLeaders = sortedLeaders.filter(leader =>
-    leader.roi >= minROI && leader.performanceFee <= maxFee && leader.isActive
+    leader.averageCopierROI * 100 >= minROI && leader.activeCopiers > 0
   )
 
   const handleSort = (field: SortField) => {
@@ -142,7 +155,7 @@ export default function Leaderboard() {
         />
         <SummaryCard
           label="Total Copiers"
-          value={filteredLeaders.reduce((sum, l) => sum + l.totalCopiers, 0).toString()}
+          value={filteredLeaders.reduce((sum, l) => sum + l.activeCopiers, 0).toString()}
           icon={<Users className="w-5 h-5 text-purple-500" />}
         />
         <SummaryCard
@@ -152,7 +165,7 @@ export default function Leaderboard() {
         />
         <SummaryCard
           label="Avg ROI"
-          value={`${(filteredLeaders.reduce((sum, l) => sum + l.roi, 0) / filteredLeaders.length || 0).toFixed(1)}%`}
+          value={`${(filteredLeaders.reduce((sum, l) => sum + l.averageCopierROI * 100, 0) / filteredLeaders.length || 0).toFixed(1)}%`}
           icon={<TrendingUp className="w-5 h-5 text-blue-500" />}
         />
       </div>
@@ -171,11 +184,11 @@ export default function Leaderboard() {
                 </th>
                 <th
                   className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:text-white transition"
-                  onClick={() => handleSort('roi')}
+                  onClick={() => handleSort('averageCopierROI')}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>ROI</span>
-                    {sortField === 'roi' && (
+                    <span>Avg ROI</span>
+                    {sortField === 'averageCopierROI' && (
                       sortOrder === 'desc' ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />
                     )}
                   </div>
@@ -193,6 +206,17 @@ export default function Leaderboard() {
                 </th>
                 <th
                   className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:text-white transition"
+                  onClick={() => handleSort('totalTrades')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Trades</span>
+                    {sortField === 'totalTrades' && (
+                      sortOrder === 'desc' ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:text-white transition"
                   onClick={() => handleSort('totalVolume')}
                 >
                   <div className="flex items-center space-x-1">
@@ -202,22 +226,8 @@ export default function Leaderboard() {
                     )}
                   </div>
                 </th>
-                <th
-                  className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:text-white transition"
-                  onClick={() => handleSort('winRate')}
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Win Rate</span>
-                    {sortField === 'winRate' && (
-                      sortOrder === 'desc' ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />
-                    )}
-                  </div>
-                </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                  Fee
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                  Min Deposit
+                  Fees Earned
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                   Action
@@ -225,8 +235,29 @@ export default function Leaderboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/50">
-              {filteredLeaders.map((leader, index) => (
-                <tr key={leader.address} className="hover:bg-gray-700/30 transition">
+              {loading && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                    Loading leaders...
+                  </td>
+                </tr>
+              )}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-red-400">
+                    {error}
+                  </td>
+                </tr>
+              )}
+              {!loading && !error && filteredLeaders.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                    No leaders found. Be the first to register!
+                  </td>
+                </tr>
+              )}
+              {!loading && filteredLeaders.map((leader, index) => (
+                <tr key={leader.leaderAddress} className="hover:bg-gray-700/30 transition">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       {index < 3 ? (
@@ -247,32 +278,32 @@ export default function Leaderboard() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div>
-                        <div className="text-sm font-semibold text-white">{leader.ensName}</div>
-                        <div className="text-xs text-gray-400 font-mono">{leader.address.slice(0, 8)}...</div>
+                        <div className="text-sm font-semibold text-white">
+                          {leader.leaderAddress.slice(0, 6)}...{leader.leaderAddress.slice(-4)}
+                        </div>
+                        <div className="text-xs text-gray-400 font-mono">{leader.leaderAddress.slice(0, 8)}...</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className={`text-sm font-bold ${leader.roi >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {leader.roi >= 0 ? '+' : ''}{leader.roi.toFixed(2)}%
+                    <div className={`text-sm font-bold ${leader.averageCopierROI >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {leader.averageCopierROI >= 0 ? '+' : ''}{(leader.averageCopierROI * 100).toFixed(2)}%
                     </div>
-                    <div className="text-xs text-gray-400">Max DD: {leader.maxDrawdown.toFixed(1)}%</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white font-semibold">{leader.totalCopiers}</div>
+                    <div className="text-sm text-white font-semibold">{leader.activeCopiers}</div>
+                    <div className="text-xs text-gray-400">of {leader.totalCopiers} total</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white">${(parseFloat(leader.totalVolume) / 1000).toFixed(1)}K</div>
-                    <div className="text-xs text-gray-400">{leader.totalTrades} trades</div>
+                    <div className="text-sm text-white font-semibold">{leader.totalTrades}</div>
+                    <div className="text-xs text-gray-400">trades</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white font-semibold">{leader.winRate.toFixed(1)}%</div>
+                    <div className="text-sm text-white">${(parseFloat(leader.totalVolume) / 1000000).toFixed(2)}M</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white">{(leader.performanceFee / 100).toFixed(1)}%</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-white">${leader.minDeposit}</div>
+                    <div className="text-sm text-white">${(parseFloat(leader.totalFeesAccumulated) / 1000000).toFixed(2)}M</div>
+                    <div className="text-xs text-gray-400">Claimable: ${(parseFloat(leader.totalFeesClaimable) / 1000000).toFixed(2)}M</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
@@ -287,12 +318,6 @@ export default function Leaderboard() {
             </tbody>
           </table>
         </div>
-
-        {filteredLeaders.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-400">No leaders found matching your filters</p>
-          </div>
-        )}
       </div>
 
       {/* Info Box */}

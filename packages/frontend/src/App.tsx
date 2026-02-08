@@ -12,6 +12,7 @@ import SimplifiedLeaderDashboard from './pages/SimplifiedLeaderDashboard'
 import CopierDashboard from './pages/CopierDashboard'
 import Leaderboard from './pages/Leaderboard'
 import HealthCheck from './pages/HealthCheck'
+import { IntegrationTest } from './pages/IntegrationTest'
 
 const queryClient = new QueryClient()
 
@@ -29,6 +30,7 @@ function App() {
                 <Route path="/copier" element={<CopierDashboard />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 <Route path="/health" element={<HealthCheck />} />
+                <Route path="/test" element={<IntegrationTest />} />
               </Routes>
             </Layout>
           </Router>

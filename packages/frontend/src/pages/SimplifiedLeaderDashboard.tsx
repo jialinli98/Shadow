@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract } from 'wagmi'
 import { formatEther } from 'viem'
-import { Users, TrendingUp, DollarSign, Activity } from 'lucide-react'
-import axios from 'axios'
+import { Users, TrendingUp, DollarSign } from 'lucide-react'
+import { leaderAPI } from '../services/api'
 import TradingProfile from '../components/TradingProfile'
 import TradingSessions from '../components/TradingSessions'
 import SimpleTradeExecutor from '../components/SimpleTradeExecutor'
 import SettlementSummary from '../components/SettlementSummary'
 
 const REGISTRY_ADDRESS = (import.meta.env.VITE_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000') as `0x${string}`
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 export default function SimplifiedLeaderDashboard() {
   const { address, isConnected } = useAccount()
-  const [activeCopiers, setActiveCopiers] = useState<any[]>([])
+  const [leaderStats, setLeaderStats] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState({
     totalCopiers: 0,
+    activeCopiers: 0,
     totalVolume: '0',
     feesEarned: '0',
+    totalTrades: 0,
   })
 
   // Check if leader is registered
@@ -60,33 +62,46 @@ export default function SimplifiedLeaderDashboard() {
     args: address && isRegistered ? [address] : undefined,
   })
 
-  // Fetch active copiers
+  // Fetch leader stats from new API
   useEffect(() => {
     if (!address || !isRegistered) return
 
-    const fetchCopiers = async () => {
+    const fetchLeaderStats = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/copiers/by-leader/${address}`)
-        setActiveCopiers(response.data)
+        setLoading(true)
+        const stats = await leaderAPI.getProfile(address)
+        setLeaderStats(stats)
+
+        // Update metrics from new API
+        setMetrics({
+          totalCopiers: stats.totalCopiers || 0,
+          activeCopiers: stats.activeCopiers || 0,
+          totalVolume: (parseFloat(stats.totalVolume || '0') / 1000000).toFixed(2),
+          feesEarned: (parseFloat(stats.totalFeesAccumulated || '0') / 1000000).toFixed(2),
+          totalTrades: stats.totalTrades || 0,
+        })
       } catch (error) {
-        console.error('Failed to fetch copiers:', error)
+        console.error('Failed to fetch leader stats:', error)
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchCopiers()
-    const interval = setInterval(fetchCopiers, 5000)
+    fetchLeaderStats()
+    const interval = setInterval(fetchLeaderStats, 10000)
     return () => clearInterval(interval)
   }, [address, isRegistered])
 
-  // Update metrics
+  // Update metrics from contract data
   useEffect(() => {
     if (leaderProfile) {
       const profile = leaderProfile as any
-      setMetrics({
-        totalCopiers: Number(profile.activeCopierCount || profile[4] || 0),
-        totalVolume: '0',
+      // Contract data can override or supplement API data
+      setMetrics(prev => ({
+        ...prev,
+        totalCopiers: Number(profile.activeCopierCount || profile[4] || prev.totalCopiers),
         feesEarned: formatEther(profile.totalFeesEarned || profile[5] || 0n),
-      })
+      }))
     }
   }, [leaderProfile])
 
@@ -145,21 +160,26 @@ export default function SimplifiedLeaderDashboard() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard
           icon={<Users className="w-6 h-6 text-indigo-500" />}
           label="Active Copiers"
-          value={metrics.totalCopiers.toString()}
+          value={`${metrics.activeCopiers} / ${metrics.totalCopiers}`}
+        />
+        <MetricCard
+          icon={<Activity className="w-6 h-6 text-blue-500" />}
+          label="Total Trades"
+          value={metrics.totalTrades.toString()}
         />
         <MetricCard
           icon={<TrendingUp className="w-6 h-6 text-green-500" />}
           label="Total Volume"
-          value={`${Number(metrics.totalVolume).toFixed(2)} USDC`}
+          value={`$${metrics.totalVolume}M`}
         />
         <MetricCard
           icon={<DollarSign className="w-6 h-6 text-purple-500" />}
           label="Fees Earned"
-          value={`${Number(metrics.feesEarned).toFixed(2)} USDC`}
+          value={`$${metrics.feesEarned}M`}
         />
       </div>
 
@@ -224,53 +244,6 @@ export default function SimplifiedLeaderDashboard() {
         />
       </div>
 
-      {/* Active Copiers Table */}
-      {activeCopiers.length > 0 && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-indigo-500" />
-            Active Copiers
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left border-b border-gray-700">
-                  <th className="pb-3 text-sm font-medium text-gray-400">Address</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Deposit</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">P&L</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeCopiers.map((copier, index) => (
-                  <tr key={index} className="border-b border-gray-700/50">
-                    <td className="py-3 text-sm font-mono text-white">
-                      {copier.copierAddress.slice(0, 6)}...{copier.copierAddress.slice(-4)}
-                    </td>
-                    <td className="py-3 text-sm text-gray-300">
-                      {formatEther(copier.deposit)} USDC
-                    </td>
-                    <td className={`py-3 text-sm font-semibold ${
-                      copier.currentPnL >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`}>
-                      {copier.currentPnL >= 0 ? '+' : ''}{copier.currentPnL.toFixed(2)}%
-                    </td>
-                    <td className="py-3">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        copier.isActive
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-red-500/20 text-red-400'
-                      }`}>
-                        {copier.isActive ? 'Active' : 'Paused'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Footer - Tech Attribution */}
       <footer className="mt-8 pt-6 border-t border-gray-800">

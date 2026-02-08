@@ -13,7 +13,7 @@ const api = axios.create({
 // Leader APIs
 export const leaderAPI = {
   /**
-   * Get all registered leaders
+   * Get all registered leaders (leaderboard)
    */
   getAll: async () => {
     const response = await api.get('/api/leaders')
@@ -21,26 +21,10 @@ export const leaderAPI = {
   },
 
   /**
-   * Get leader profile by address
+   * Get leader profile and stats by address
    */
   getProfile: async (address: string) => {
     const response = await api.get(`/api/leaders/${address}`)
-    return response.data
-  },
-
-  /**
-   * Get leader's copiers
-   */
-  getCopiers: async (address: string) => {
-    const response = await api.get(`/api/copiers/by-leader/${address}`)
-    return response.data
-  },
-
-  /**
-   * Get leader's performance metrics
-   */
-  getMetrics: async (address: string) => {
-    const response = await api.get(`/api/leaders/${address}/metrics`)
     return response.data
   },
 
@@ -51,9 +35,54 @@ export const leaderAPI = {
     address: string
     ensName: string
     performanceFee: number
-    minDeposit: string
   }) => {
     const response = await api.post('/api/leaders/register', data)
+    return response.data
+  },
+}
+
+// Session APIs (Yellow Network channels)
+export const sessionAPI = {
+  /**
+   * Open a new Yellow Network session
+   */
+  open: async (data: {
+    userAddress: string
+    collateral: string
+  }) => {
+    const response = await api.post('/api/sessions/open', data)
+    return response.data
+  },
+
+  /**
+   * Get session details by channel ID
+   */
+  getSession: async (channelId: string) => {
+    const response = await api.get(`/api/sessions/${channelId}`)
+    return response.data
+  },
+
+  /**
+   * Get all active sessions
+   */
+  getAllSessions: async () => {
+    const response = await api.get('/api/sessions')
+    return response.data
+  },
+
+  /**
+   * Settle a channel
+   */
+  settle: async (channelId: string) => {
+    const response = await api.post(`/api/sessions/${channelId}/settle`)
+    return response.data
+  },
+
+  /**
+   * Preview settlement before executing
+   */
+  previewSettlement: async (channelId: string) => {
+    const response = await api.get(`/api/sessions/${channelId}/settlement-preview`)
     return response.data
   },
 }
@@ -61,9 +90,9 @@ export const leaderAPI = {
 // Copier APIs
 export const copierAPI = {
   /**
-   * Get copier profile by address
+   * Get copier portfolio by address
    */
-  getProfile: async (address: string) => {
+  getPortfolio: async (address: string) => {
     const response = await api.get(`/api/copiers/${address}`)
     return response.data
   },
@@ -74,29 +103,11 @@ export const copierAPI = {
   subscribe: async (data: {
     copierAddress: string
     leaderAddress: string
-    deposit: string
-    maxDrawdown: number
+    copierChannelId: string
+    performanceFee?: number
+    maxDrawdown?: number
   }) => {
     const response = await api.post('/api/copiers/subscribe', data)
-    return response.data
-  },
-
-  /**
-   * Unsubscribe from a leader
-   */
-  unsubscribe: async (copierAddress: string, leaderAddress: string) => {
-    const response = await api.post('/api/copiers/unsubscribe', {
-      copierAddress,
-      leaderAddress,
-    })
-    return response.data
-  },
-
-  /**
-   * Get copier's risk metrics
-   */
-  getRiskMetrics: async (copierAddress: string, leaderAddress: string) => {
-    const response = await api.get(`/api/risk-metrics/${copierAddress}/${leaderAddress}`)
     return response.data
   },
 }
@@ -104,46 +115,71 @@ export const copierAPI = {
 // Trade APIs
 export const tradeAPI = {
   /**
-   * Get trade history for a session
-   */
-  getHistory: async (channelId: string) => {
-    const response = await api.get(`/api/trades/${channelId}`)
-    return response.data
-  },
-
-  /**
    * Execute a trade (leader only)
    */
   execute: async (data: {
     leaderAddress: string
-    asset: string
-    side: 'BUY' | 'SELL'
-    amount: string
-    price: number
+    trade: {
+      tradeId?: string
+      asset: string
+      action: 'BUY' | 'SELL'
+      amount: string
+      price: string
+      tokenAddress?: string
+      yellowChannelId?: string
+    }
+    signature: string
   }) => {
     const response = await api.post('/api/trades/execute', data)
     return response.data
   },
 }
 
-// Stats APIs
-export const statsAPI = {
+// Oracle APIs
+export const oracleAPI = {
   /**
-   * Get platform statistics
+   * Get current price for an asset
    */
-  getPlatformStats: async () => {
-    const response = await api.get('/api/stats/platform')
+  getPrice: async (asset: string) => {
+    const response = await api.get(`/api/prices/${asset}`)
     return response.data
   },
 
   /**
-   * Get leaderboard data
+   * Get all available prices
    */
-  getLeaderboard: async (params?: {
-    sortBy?: 'roi' | 'volume' | 'copiers'
-    limit?: number
-  }) => {
-    const response = await api.get('/api/stats/leaderboard', { params })
+  getAllPrices: async () => {
+    const response = await api.get('/api/prices')
+    return response.data
+  },
+}
+
+// Market Maker APIs
+export const marketMakerAPI = {
+  /**
+   * Get Market Maker statistics
+   */
+  getStats: async () => {
+    const response = await api.get('/api/market-maker/stats')
+    return response.data
+  },
+
+  /**
+   * Get Market Maker exposure summary
+   */
+  getExposure: async () => {
+    const response = await api.get('/api/market-maker/exposure')
+    return response.data
+  },
+}
+
+// Health check
+export const healthAPI = {
+  /**
+   * Health check endpoint
+   */
+  check: async () => {
+    const response = await api.get('/api/health')
     return response.data
   },
 }
