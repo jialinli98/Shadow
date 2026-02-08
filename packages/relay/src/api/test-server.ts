@@ -43,15 +43,15 @@ let yellowConnected = false;
 // Initialize Yellow Network connection
 async function initializeYellowNetwork() {
   try {
-    console.log('🔄 Connecting to Yellow Network testnet...');
-    console.log('📍 Broker:', process.env.YELLOW_WS_URL || 'wss://testnet.clearnet.yellow.com/ws');
+    console.log('🔄 Connecting to Yellow Network...');
+    console.log('📍 Broker:', process.env.YELLOW_WS_URL || 'wss://clearnet.yellow.com/ws');
 
     const provider = new ethers.JsonRpcProvider(
       process.env.ETHEREUM_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com'
     );
 
     yellowService = new YellowService({
-      wsUrl: process.env.YELLOW_WS_URL || 'wss://testnet.clearnet.yellow.com/ws',
+      wsUrl: process.env.YELLOW_WS_URL || 'wss://clearnet.yellow.com/ws',
       chainId: parseInt(process.env.YELLOW_CHAIN_ID || '11155111'),
       adjudicatorAddress: process.env.YELLOW_ADJUDICATOR_ADDRESS || '0x0871952AC5126Bf0E4Ba2a03002e9fE8C39f8418',
       provider,
@@ -61,7 +61,7 @@ async function initializeYellowNetwork() {
     await yellowService.connect();
     yellowConnected = true;
 
-    console.log('✅ Connected to Yellow Network testnet!');
+    console.log('✅ Connected to Yellow Network!');
     console.log('🎯 Hybrid Mode: Real Yellow sessions + Mock channels for demo');
 
     // Listen for Yellow Network events

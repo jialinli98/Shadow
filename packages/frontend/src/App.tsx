@@ -8,6 +8,7 @@ import { config } from './wagmi'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
 import LeaderDashboard from './pages/LeaderDashboard'
+import SimplifiedLeaderDashboard from './pages/SimplifiedLeaderDashboard'
 import CopierDashboard from './pages/CopierDashboard'
 import Leaderboard from './pages/Leaderboard'
 import HealthCheck from './pages/HealthCheck'
@@ -23,7 +24,8 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<HomePage />} />
-                <Route path="/leader" element={<LeaderDashboard />} />
+                <Route path="/leader" element={<SimplifiedLeaderDashboard />} />
+                <Route path="/leader/full" element={<LeaderDashboard />} />
                 <Route path="/copier" element={<CopierDashboard />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 <Route path="/health" element={<HealthCheck />} />
