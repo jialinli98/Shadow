@@ -1,43 +1,90 @@
 # 🕶️ Shadow Protocol
 
-> **Privacy-Preserving Trade Replication using Yellow State Channels + Uniswap v4**
+> **Privacy-Preserving Copy Trading using Yellow Network State Channels + ENS**
 
-**🏆 Submission for Uniswap v4 Privacy DeFi Track - ETHGlobal HackMoney 2026**
 
 ## The Problem
 
-On-chain copy trading (Logearn, Copin, etc.) exposes traders' strategies in the mempool, allowing MEV bots to front-run and arbitrage, destroying alpha. Centralized platforms (eToro, Bybit) solve privacy but require custody and trust.
+**On-chain copy trading** (Logearn, Copin) exposes every trade to MEV bots, enabling front-running and strategy exploitation. **Centralized platforms** (eToro, Bybit) solve privacy but require custody, trust, and store trader profiles in centralized databases vulnerable to hacks and censorship.
 
 ## The Solution
 
-**Shadow** is the first non-custodial copy trading platform where leader trades stay private until settlement. All trading happens inside Yellow Network state channels—off-chain, gasless, and invisible to MEV bots. Settlement occurs through Uniswap v4 with hook-based verification to maintain privacy and integrity.
+**Shadow** is a non-custodial copy trading platform built on two key technologies:
 
-## 📜 Deployed Contracts & Transactions (Sepolia Testnet)
+1. **Yellow Network State Channels**: All trades execute off-chain with instant finality - gasless, private, and invisible to MEV bots
+2. **ENS Text Records**: Trader profiles, performance metrics, and achievements stored on-chain - fully decentralized, no centralized database
 
-### Core Smart Contracts
+## Integration 
 
-| Contract | Address | Transaction Hash |
-|----------|---------|------------------|
-| **ShadowSettlementHook** | [`0xDA80D93C0B8c8241f58eA9de2C555fBc1AEA7e5C`](https://sepolia.etherscan.io/address/0xDA80D93C0B8c8241f58eA9de2C555fBc1AEA7e5C) | [`0x94e64e6909...`](https://sepolia.etherscan.io/tx/0x94e64e69095fef8a858d1d2bde71f65a3540bb429931391b256fb11ba3e46d89) |
-| **Uniswap V4 Pool Init** | USDC/WETH Pool | [`0xa7f59cf756...`](https://sepolia.etherscan.io/tx/0xa7f59cf756896a6a7b38c355da665b20611db340d2e4be484b17aeef031cf775) |
-| **ShadowRegistry** | [`0xaad7376A2B7D1a5C3615B969bFf0Ce46B6ac8C9d`](https://sepolia.etherscan.io/address/0xaad7376A2B7D1a5C3615B969bFf0Ce46B6ac8C9d) | Deployed ✅ |
-| **ShadowFeeManager** | [`0x6bF059D3CC2FCC52bE4f8E12e185dBbab553B62d`](https://sepolia.etherscan.io/address/0x6bF059D3CC2FCC52bE4f8E12e185dBbab553B62d) | Deployed ✅ |
-| **MockYellowAdjudicator** | [`0x0871952AC5126Bf0E4Ba2a03002e9fE8C39f8418`](https://sepolia.etherscan.io/address/0x0871952AC5126Bf0E4Ba2a03002e9fE8C39f8418) | Deployed ✅ |
-| **MockERC20 (USDC)** | [`0x77eB3E04229C2D31d4D8637D18200a18Ff167B5B`](https://sepolia.etherscan.io/address/0x77eB3E04229C2D31d4D8637D18200a18Ff167B5B) | Deployed ✅ |
+### Yellow Network Integration 
 
-### Uniswap V4 Integration
+- Official Yellow Network Clearnode
+- Nitrolite state channels
+- EIP-712 signed challenges
+- Live state channel operations in relay logs
 
-- **Official PoolManager**: `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543`
-- **Pool**: USDC/WETH, 0.3% fee
-- **Source Code Verification**: [Sourcify](https://repo.sourcify.dev/contracts/full_match/11155111/0xDA80D93C0B8c8241f58eA9de2C555fBc1AEA7e5C/)
+### ENS Integration ✅
+
+- **Text Records Used**:
+  - `trading.winrate` - Win rate percentage
+  - `trading.roi` - Return on investment
+  - `trading.totalTrades` - Total number of trades
+  - `trading.avgReturn` - Average return per trade
+  - `trading.sharpeRatio` - Risk-adjusted return
+  - `trading.achievements` - Badges and milestones
+  - `trading.strategy` - Trading strategy description
+  - `trading.risk` - Risk level classification
+  - `trading.assets` - Preferred assets
+  - `description`, `com.twitter`, `com.discord`, `url` - Standard ENS fields
+
+- `packages/frontend/src/components/ENSMetadata.tsx`
+- Real ENS text record fetching via wagmi/viem publicClient
+
+### Smart Contracts (Sepolia Testnet)
+
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **ShadowRegistry** | [`0xaad7376A2B7D1a5C3615B969bFf0Ce46B6ac8C9d`](https://sepolia.etherscan.io/address/0xaad7376A2B7D1a5C3615B969bFf0Ce46B6ac8C9d) | Leader/copier registration |
+| **ShadowFeeManager** | [`0x6bF059D3CC2FCC52bE4f8E12e185dBbab553B62d`](https://sepolia.etherscan.io/address/0x6bF059D3CC2FCC52bE4f8E12e185dBbab553B62d) | Performance fee distribution |
 
 ## How It Works
 
-1. **Leader Setup**: Alice registers as a leader, opens a Yellow state channel session
-2. **Copier Subscribe**: Bob subscribes to Alice, deposits funds in his own state channel
-3. **Trade Replication**: Alice's trades are replicated proportionally to Bob's session—all off-chain via the Shadow relay
-4. **Settlement**: When sessions close, final states settle on-chain with performance fees distributed
-5. **Privacy**: Only deposit/withdrawal appear on-chain. No one can reconstruct Alice's strategy.
+### Step-by-Step Flow
+
+**1. Leader Registration**
+- Alice connects her wallet and navigates to the Leader Dashboard
+- She registers with her ENS name (e.g., "shadowleader.eth") and sets her performance fee (15%)
+- She deposits initial collateral (e.g., 10,000 USDC) which opens a Yellow Network state channel
+- The Shadow relay creates an off-chain session: `Alice ↔ Market Maker`
+
+**2. Copier Subscription**
+- Bob discovers Alice on the Browse Leaders page (showing her win rate, ROI from ENS metadata)
+- He subscribes to Alice by depositing his own collateral (e.g., 5,000 USDC)
+- The Shadow relay creates Bob's state channel: `Bob ↔ Market Maker`
+- A copy relationship is established in the relay's database
+
+**3. Private Trade Execution**
+- Alice executes a trade (BUY 0.01 ETH @ $3,200) through the trade executor
+- Her wallet signs the trade with EIP-712 signature
+- The trade executes **off-chain** in her Yellow state channel (nonce increments)
+- **Zero on-chain footprint** - no mempool exposure, no MEV risk
+
+**4. Automatic Replication**
+- The Shadow relay receives Alice's signed trade
+- It verifies the signature and checks Alice is a registered leader
+- It calculates Bob's proportional position: `(Bob's deposit / Alice's deposit) × Trade size`
+- Bob's trade executes in his state channel automatically
+- **All happens off-chain** - still completely private
+
+**5. Decentralized Profiles via ENS**
+- Leader's trading metrics update in ENS text records (trading.winrate, trading.roi, etc.)
+- Copiers discover leaders by viewing their on-chain ENS profiles
+- No centralized database - all profile data stored in ENS
+- Censorship-resistant and verifiable
+
+**Privacy Guarantee**: During trading, all trades happen in Yellow Network state channels - completely off-chain. No blockchain observer can see individual trades, position sizes, or strategy patterns. Only the participants and Shadow relay have visibility.
+
+**Decentralization Guarantee**: All trader profiles stored in ENS text records on-chain. No centralized database, no single point of failure, no trusted intermediary for identity.
 
 ## 🔐 Privacy-Enhancing Mechanisms
 
@@ -55,22 +102,13 @@ On-chain copy trading (Logearn, Copin, etc.) exposes traders' strategies in the 
 3. **Cryptographic Proofs**: State channel signatures verify authenticity without revealing details
 4. **Hook-Based Verification**: Smart contracts validate proofs without exposing trade history
 
-### Privacy Comparison
-
-| Metric | Traditional DEX | Copy Trading Platforms | Shadow Protocol |
-|--------|----------------|------------------------|-----------------|
-| Individual trades visible | ✅ Yes | ✅ Yes | ❌ No (off-chain) |
-| MEV attack surface | High | High | Minimal |
-| Front-running possible | Yes | Yes | No |
-| Strategy privacy | No | No | Yes |
-| Verifiable settlement | Yes | Varies | Yes (cryptographic) |
 
 ### What Remains Private (Off-Chain)
-- ✅ Individual trade entries and exits
-- ✅ Trade timing and execution prices
-- ✅ Intermediate position sizes
-- ✅ Trading strategy and signals
-- ✅ Leader identity during session
+- Individual trade entries and exits
+- Trade timing and execution prices
+- Intermediate position sizes
+- Trading strategy and signals
+- Leader identity during session
 
 ### What Becomes Public (On-Chain)
 - Final net position change (aggregated)
@@ -78,68 +116,59 @@ On-chain copy trading (Logearn, Copin, etc.) exposes traders' strategies in the 
 - Settlement timestamp via Uniswap v4
 - Performance fees distributed
 
-**Result**: 100% trade privacy with 100% settlement verifiability.
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         PRIVACY LAYER                            │
-│  Leader trades off-chain in Yellow State Channel (PRIVATE)      │
-│  ↓                                                               │
-│  Shadow Relay replicates to copiers (PRIVATE)                   │
-│  ↓                                                               │
-│  Session closes → Final state submitted to Yellow Adjudicator   │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                 SETTLEMENT LAYER (Uniswap V4)                    │
-│  ShadowSettlementHook verifies state channel proof              │
-│  ↓                                                               │
-│  Uniswap V4 swap executes based on net position change          │
-│  ↓                                                               │
-│  Only aggregated settlement visible on-chain                    │
-└─────────────────────────────────────────────────────────────────┘
-```
 
 ### Technical Flow
-```solidity
-// 1. Off-chain: Trade in Yellow state channel (PRIVATE)
-yellowChannel.executeOffChainSwap(token0, token1, amount);
 
-// 2. Close channel with final state
-yellowAdjudicator.finalizeChannel(channelId, finalNonce, signatures);
+**Yellow Network Integration (Off-Chain Trading):**
+```typescript
+// 1. Leader executes trade in Yellow state channel
+const trade = {
+  asset: 'ETH',
+  side: 'BUY',
+  amount: '0.01',
+  price: getCurrentPrice(),
+  channelId: leaderChannel.id
+};
 
-// 3. Settle on Uniswap v4 with hook verification
-poolManager.swap(
-    poolKey,
-    swapParams,
-    hookData: {
-        channelId,        // State channel ID
-        finalNonce,       // Final state nonce
-        signature,        // Cryptographic proof
-        leaderAddress,    // Performance fee recipient
-        performanceFee    // Amount
-    }
+// 2. Sign with EIP-712 and execute off-chain
+const signature = await wallet.signTypedData(trade);
+await yellowChannel.executeSwap(trade, signature);
+
+// 3. Shadow relay replicates proportionally to copiers
+const copierTrade = {
+  ...trade,
+  amount: (copierDeposit / leaderDeposit) * trade.amount,
+  channelId: copierChannel.id
+};
+await copierYellowChannel.executeSwap(copierTrade);
+
+```
+
+**ENS Integration (Decentralized Profiles):**
+```typescript
+// Store trader metrics in ENS text records
+await ensRegistry.setTextRecord(
+  'shadowleader.eth',
+  'trading.winrate',
+  '73.5%'
+);
+await ensRegistry.setTextRecord(
+  'shadowleader.eth',
+  'trading.roi',
+  '+284%'
+);
+await ensRegistry.setTextRecord(
+  'shadowleader.eth',
+  'trading.totalTrades',
+  '1247'
 );
 
-// 4. Hook verifies state channel proof before settling
-function afterSwap(...) external override {
-    SettlementData memory settlement = abi.decode(hookData, (SettlementData));
+// Copiers discover leaders via ENS (fully on-chain)
+const winRate = await ensRegistry.getTextRecord(
+  'shadowleader.eth',
+  'trading.winrate'
+);
 
-    // Verify Yellow state channel proof
-    require(
-        yellowAdjudicator.verifyFinalState(
-            settlement.channelId,
-            settlement.finalNonce,
-            settlement.signature
-        ),
-        "Invalid state proof"
-    );
-
-    // Execute settlement only if proof is valid ✅
-    _processSettlement(settlement);
-}
 ```
 
 ## Project Structure
@@ -210,14 +239,24 @@ npm run contracts:build
 npm run contracts:test
 
 # Start relay service (in development mode)
-npm run relay:dev
+cd packages/relay
+npm run dev:shadow
 
 # Start frontend (in another terminal)
-npm run frontend:dev
-
-# Or run everything in parallel
+cd packages/frontend
 npm run dev
+
+# The application will be available at:
+# - Frontend: http://localhost:3000
+# - API: http://localhost:3001/api
 ```
+
+### Running the Demo
+
+**Prerequisites:**
+- Two browser profiles or incognito windows (one for leader, one for copier)
+- MetaMask wallets connected to Sepolia testnet
+- Some test ETH for gas
 
 ### Deployment
 
@@ -232,106 +271,12 @@ npm run relay:build
 npm run frontend:build
 ```
 
-## 💻 Tech Stack
+## Tech Stack
 
+- **Yellow Network**: Nitrolite protocol for off-chain state channels (instant, private execution)
+- **ENS**: Text records for decentralized profile storage (trading.*, achievements, social)
 - **Smart Contracts**: Solidity 0.8.24, Hardhat, OpenZeppelin
-- **Uniswap V4**: Hook-based settlement verification
-- **State Channels**: Yellow Network (off-chain privacy layer)
-- **Relay Service**: TypeScript, Express, WebSocket
-- **Frontend**: React, Vite, TailwindCSS, Wagmi, Viem
-- **Identity**: ENS integration
-- **Deployment**: Sepolia testnet
-
-## 🏆 Why Shadow Qualifies for Uniswap v4 Privacy DeFi Track
-
-### Prize Track Requirements Met
-
-**"Build on Uniswap v4 to explore privacy-enhancing financial systems"** ✅
-
-1. **Reduces Unnecessary Information Exposure** ✅
-   - Individual trades never touch the mempool
-   - Only aggregated final positions visible on-chain
-   - State channel privacy for all intermediate states
-
-2. **Improves Execution Quality** ✅
-   - Eliminates front-running and sandwich attacks
-   - No adverse selection from leaked order flow
-   - MEV-protected trade execution
-
-3. **More Resilient to Adverse Selection and Extractive Dynamics** ✅
-   - MEV bots cannot extract value from hidden trades
-   - Searchers cannot exploit trade intentions
-   - Fair pricing for all participants
-
-4. **Preserves On-Chain Verifiability** ✅
-   - Cryptographic state channel proofs
-   - Uniswap v4 hook verification ensures integrity
-   - Full settlement transparency
-
-5. **Responsible, Transparent System Design** ✅
-   - Open-source codebase
-   - No trusted intermediaries
-   - Clear settlement mechanism via Uniswap v4
-
-### Meaningful Use of Hooks
-
-Shadow uses Uniswap v4 hooks **meaningfully** to:
-- Verify Yellow Network state channel proofs before settlement
-- Ensure only valid, finalized states can settle on-chain
-- Prevent double-settlement attacks
-- Process performance fees transparently
-- Maintain privacy while ensuring integrity
-
-```solidity
-// ShadowSettlementHook.sol
-function afterSwap(..., bytes calldata hookData) external override {
-    SettlementData memory settlement = abi.decode(hookData, (SettlementData));
-
-    // Verify state channel proof with Yellow Adjudicator
-    _verifyStateChannelProof(settlement);
-
-    // Mark channel as settled (prevent double-spend)
-    settledChannels[settlement.channelId] = true;
-
-    // Process performance fees
-    _processPerformanceFee(sender, leader, fee);
-
-    return IHooks.afterSwap.selector;
-}
-```
-
-## 🎬 Demo Video
-
-[Watch 3-Minute Demo →](YOUR_VIDEO_LINK_HERE)
-
-**Demo showcases:**
-1. Privacy layer: Off-chain trade execution in Yellow channels
-2. Settlement layer: Uniswap v4 hook verification
-3. Zero information leakage to mempool
-4. Cryptographic proof validation
-5. Successful on-chain settlement
-
-## 🔮 Future Enhancements
-
-- [ ] CREATE2 deployment for production hook with proper address flags
-- [ ] Multi-pool support for complex trading strategies
-- [ ] Cross-chain settlement via Yellow Network bridges
-- [ ] Privacy-preserving performance analytics dashboard
-- [ ] ZK-proofs for enhanced privacy guarantees
-- [ ] Integration with additional Uniswap v4 pools
-- [ ] Liquidity provision through the privacy layer
-
-## 📖 Additional Documentation
-
-- **Yellow Integration**: [YELLOW_NETWORK_INTEGRATION_SUMMARY.md](./YELLOW_NETWORK_INTEGRATION_SUMMARY.md)
-- **ENS Setup**: [ENS_INTEGRATION_SUMMARY.md](./ENS_INTEGRATION_SUMMARY.md)
-- **Demo Guide**: [YELLOW_NETWORK_DEMO_GUIDE.md](./YELLOW_NETWORK_DEMO_GUIDE.md)
-- **Testing**: [TESTING_GUIDE.md](./TESTING_GUIDE.md)
-- **Qualification Proof**: [YELLOW_QUALIFICATION_PROOF.md](./YELLOW_QUALIFICATION_PROOF.md)
-
-## 🤝 Team
-
-Built during ETHGlobal HackMoney 2026
+- **Deployment**: Connected to Yellow clearnode + ENS mainnet/testnet
 
 ## License
 

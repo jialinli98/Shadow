@@ -11,11 +11,7 @@ import UnifiedDashboard from './pages/UnifiedDashboard'
 import BrowseLeaders from './pages/BrowseLeaders'
 import HealthCheck from './pages/HealthCheck'
 import { IntegrationTest } from './pages/IntegrationTest'
-// Legacy pages (kept for reference)
 import LeaderDashboard from './pages/LeaderDashboard'
-import SimplifiedLeaderDashboard from './pages/SimplifiedLeaderDashboard'
-import CopierDashboard from './pages/CopierDashboard'
-import Leaderboard from './pages/Leaderboard'
 
 const queryClient = new QueryClient()
 
@@ -33,20 +29,9 @@ function App() {
                 <Route path="/health" element={<HealthCheck />} />
                 <Route path="/test" element={<IntegrationTest />} />
 
-                {/* Legacy routes - redirect to new pages */}
+                {/* Additional routes */}
                 <Route path="/leader" element={<LeaderDashboard />} />
-                <Route path="/copier" element={<UnifiedDashboard />} />
-                <Route path="/leaderboard" element={<BrowseLeaders />} />
-
-                {/* Leader registration routes */}
                 <Route path="/register/leader" element={<LeaderDashboard />} />
-                <Route path="/leader/full" element={<LeaderDashboard />} />
-
-                {/* Old versions for reference */}
-                <Route path="/legacy/leader" element={<LeaderDashboard />} />
-                <Route path="/legacy/simplified" element={<SimplifiedLeaderDashboard />} />
-                <Route path="/legacy/copier" element={<CopierDashboard />} />
-                <Route path="/legacy/leaderboard" element={<Leaderboard />} />
               </Routes>
             </Layout>
           </Router>
