@@ -209,7 +209,8 @@ export class YellowService extends EventEmitter {
    * Authenticate with Yellow Network
    */
   private async authenticate(): Promise<void> {
-    if (this.authPending) return;
+    // Don't authenticate if already authenticated or pending
+    if (this.isAuthenticated || this.authPending) return;
 
     this.authPending = true;
     console.log('🔐 Starting Yellow Network authentication...');
@@ -217,14 +218,17 @@ export class YellowService extends EventEmitter {
     try {
       const sessionExpireTimestamp = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
 
-      // Match working example exactly, but use empty allowances for sandbox
+      // Match working example - use ytest.usd for sandbox (not usdc)
       const authMessage = await createAuthRequestMessage({
         address: this.signer.address as `0x${string}`,
         session_key: this.sessionKey.address,
-        application: 'Shadow Trading',  // Use display name like working example
-        allowances: [],  // Try empty allowances for sandbox
+        application: 'Shadow Trading',
+        allowances: [{
+          asset: 'ytest.usd',
+          amount: '10000',
+        }],
         expires_at: sessionExpireTimestamp,
-        scope: 'shadow.app',  // Match working example pattern
+        scope: 'shadow.app',
       });
 
       console.log('📤 Sending auth request...');
@@ -367,13 +371,16 @@ export class YellowService extends EventEmitter {
     try {
       const sessionExpireTimestamp = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
 
-      // CRITICAL: Match working example - use wallet.address as application in challenge response!
+      // CRITICAL: Match working example exactly - use wallet.address as application!
       const authParams = {
-        scope: 'shadow.app',  // Match request scope
-        application: this.signer.address,  // Use WALLET ADDRESS (not app name) - this is key!
-        participant: this.sessionKey.address,  // Session key as participant
+        scope: 'shadow.app',
+        application: this.signer.address,  // Use WALLET ADDRESS (not app name)
+        participant: this.sessionKey.address,
         expire: sessionExpireTimestamp,
-        allowances: [],  // Empty for sandbox
+        allowances: [{
+          asset: 'ytest.usd',  // Use sandbox asset
+          amount: '10000',
+        }],
         session_key: this.sessionKey.address,
         expires_at: sessionExpireTimestamp,
       };
@@ -415,7 +422,13 @@ export class YellowService extends EventEmitter {
       this.emit('authenticated');
     } else {
       console.error('❌ Yellow Network authentication failed:', message.params);
-      this.isAuthenticated = false;
+      // Only set to false if we weren't already authenticated
+      // (this might be a duplicate/stale auth attempt)
+      if (!this.isAuthenticated) {
+        this.isAuthenticated = false;
+      } else {
+        console.log('⚠️  Ignoring auth failure - already authenticated');
+      }
     }
   }
 
