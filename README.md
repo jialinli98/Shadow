@@ -23,7 +23,7 @@
 - EIP-712 signed challenges
 - Live state channel operations in relay logs
 
-### ENS Integration ✅
+### ENS Integration 
 
 - **Text Records Used**:
   - `trading.winrate` - Win rate percentage
@@ -88,7 +88,7 @@
 
 ## 🔐 Privacy-Enhancing Mechanisms
 
-### Information Exposure Reduction ✅
+### Information Exposure Reduction 
 
 **Traditional On-Chain Copy Trading Problems:**
 - Individual trade intentions exposed in mempool → Front-running
