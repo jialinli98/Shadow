@@ -98,7 +98,14 @@ export function setupWebSocket(
     io.to(`leader-${data.leader}`).emit('trade-confirmed', {
       type: 'trade-confirmed',
       data: {
-        trade: data.trade,
+        trade: {
+          tradeId: data.trade.tradeId,
+          action: data.trade.action,
+          asset: data.trade.asset,
+          amount: data.trade.amount.toString(),
+          price: data.trade.price.toString(),
+          timestamp: data.trade.timestamp,
+        },
         copierCount: data.copierCount,
         timestamp: Date.now(),
       },

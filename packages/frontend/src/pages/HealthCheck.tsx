@@ -32,7 +32,7 @@ export default function HealthCheck() {
               <input type="checkbox" className="mt-1" />
               <div>
                 <div className="font-semibold text-white">Leader Registered</div>
-                <div className="text-xs text-gray-500">Register as a leader with ENS name "mytrader.eth"</div>
+                <div className="text-xs text-gray-500">Register as a leader with your ENS name</div>
               </div>
             </div>
 

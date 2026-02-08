@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Lock, ChevronDown, ChevronUp, Activity } from 'lucide-react'
+import { Lock, ChevronDown, ChevronUp, Activity, TrendingUp, TrendingDown } from 'lucide-react'
 import axios from 'axios'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
@@ -14,12 +14,24 @@ interface Session {
   openedAt: number
 }
 
+interface Trade {
+  tradeId: string
+  timestamp: number
+  asset: string
+  side: 'BUY' | 'SELL'
+  amount: string
+  price: string
+  role: 'leader' | 'copier'
+  channelId: string
+}
+
 interface TradingSessionsProps {
   leaderAddress: string
 }
 
 export default function TradingSessions({ leaderAddress }: TradingSessionsProps) {
   const [sessions, setSessions] = useState<Session[]>([])
+  const [trades, setTrades] = useState<Trade[]>([])
   const [showDetails, setShowDetails] = useState(false)
   const [stats, setStats] = useState({
     activeSessions: 0,
@@ -29,12 +41,13 @@ export default function TradingSessions({ leaderAddress }: TradingSessionsProps)
   })
 
   useEffect(() => {
-    const fetchSessions = async () => {
+    const fetchData = async () => {
       if (!leaderAddress) return
 
       try {
-        const response = await axios.get(`${API_URL}/api/state-channels/${leaderAddress}`)
-        const fetchedSessions = response.data
+        // Fetch sessions
+        const sessionsResponse = await axios.get(`${API_URL}/api/state-channels/${leaderAddress}`)
+        const fetchedSessions = sessionsResponse.data
 
         setSessions(fetchedSessions)
 
@@ -46,13 +59,17 @@ export default function TradingSessions({ leaderAddress }: TradingSessionsProps)
         }
 
         setStats(calculatedStats)
+
+        // Fetch individual trades
+        const tradesResponse = await axios.get(`${API_URL}/api/trades/${leaderAddress}`)
+        setTrades(tradesResponse.data.trades || [])
       } catch (error) {
-        console.error('Failed to fetch sessions:', error)
+        console.error('Failed to fetch data:', error)
       }
     }
 
-    fetchSessions()
-    const interval = setInterval(fetchSessions, 3000)
+    fetchData()
+    const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
   }, [leaderAddress])
 
@@ -165,6 +182,45 @@ export default function TradingSessions({ leaderAddress }: TradingSessionsProps)
         <div className="text-center py-8 text-gray-400">
           <Lock className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p>No active sessions yet</p>
+        </div>
+      )}
+
+      {/* Recent Trades */}
+      {trades.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold text-white mb-3">Recent Trades</h3>
+          <div className="space-y-2">
+            {trades.slice(0, 5).map((trade) => (
+              <div
+                key={trade.tradeId}
+                className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  {trade.side === 'BUY' ? (
+                    <TrendingUp className="w-5 h-5 text-green-400" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-red-400" />
+                  )}
+                  <div>
+                    <div className="text-sm font-medium text-white">
+                      {trade.side} {trade.amount} {trade.asset}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      @ ${parseFloat(trade.price).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">
+                    {new Date(trade.timestamp).toLocaleTimeString()}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {trade.role === 'leader' ? 'Leader' : 'Following'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -131,7 +131,7 @@ export default function SimplifiedLeaderDashboard() {
             You need to register as a leader to access the dashboard. Please use the full registration flow.
           </p>
           <a
-            href="/leader"
+            href="/leader/full"
             className="inline-block px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-semibold hover:from-indigo-600 hover:to-purple-600 transition"
           >
             Go to Registration
@@ -248,10 +248,6 @@ export default function SimplifiedLeaderDashboard() {
       {/* Footer - Tech Attribution */}
       <footer className="mt-8 pt-6 border-t border-gray-800">
         <div className="text-center text-xs text-gray-500">
-          Built on{' '}
-          <span className="text-gray-400">ENS</span> •{' '}
-          <span className="text-gray-400">State Channels</span> •{' '}
-          <span className="text-gray-400">Uniswap V4</span>
         </div>
       </footer>
     </div>

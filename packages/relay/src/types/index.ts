@@ -18,6 +18,7 @@ export interface YellowAppSession {
   balances: bigint[]; // Current balances in the channel
   isActive: boolean;
   createdAt: number;
+  isAppSession?: boolean; // true if full app session, false if basic channel
 }
 
 /**

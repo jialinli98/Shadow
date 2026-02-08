@@ -62,6 +62,7 @@ export class ShadowRelay extends EventEmitter {
   // Session tracking
   private userSessions: Map<string, UserSession> = new Map(); // userAddress -> session
   private leaderAddresses: Set<string> = new Set();
+  private leaderMetadata: Map<string, { ensName: string; performanceFee: number }> = new Map();
 
   constructor(config: ShadowRelayConfig) {
     super();
@@ -106,6 +107,10 @@ export class ShadowRelay extends EventEmitter {
     performanceFeeRate: number
   ): Promise<void> {
     this.leaderAddresses.add(leaderAddress);
+    this.leaderMetadata.set(leaderAddress, {
+      ensName,
+      performanceFee: performanceFeeRate
+    });
     console.log(`✅ Leader registered: ${ensName} (${leaderAddress})`);
     this.emit('leader-registered', { leaderAddress, ensName });
   }
@@ -122,30 +127,14 @@ export class ShadowRelay extends EventEmitter {
 
     let yellowSession;
 
-    try {
-      // Try to create a real Yellow Network session
-      console.log('🌐 Creating Yellow Network session...');
-      yellowSession = await this.yellowService.createSession(
-        userAddress,
-        this.marketMaker.address,
-        [collateral, collateral] // Both start with same collateral
-      );
-      console.log('✅ Yellow Network session created:', yellowSession.channelId);
-    } catch (error) {
-      // Fall back to mock session if Yellow Network fails
-      console.log('⚠️  Yellow Network session failed, using mock session');
-      console.log(`   Error: ${error instanceof Error ? error.message : error}`);
-      const mockChannelId = `mock-channel-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      yellowSession = {
-        sessionId: mockChannelId,
-        channelId: mockChannelId,
-        participants: [userAddress, this.marketMaker.address],
-        nonce: 0,
-        balances: [collateral, collateral],
-        isActive: true,
-        lastUpdateTime: Date.now(),
-      };
-    }
+    // Create Yellow Network session (with automatic app session -> basic channel fallback)
+    console.log('🌐 Creating Yellow Network session...');
+    yellowSession = await this.yellowService.createSession(
+      userAddress,
+      this.marketMaker.address,
+      [collateral, collateral] // Both start with same collateral
+    );
+    console.log('✅ Yellow Network session created:', yellowSession.channelId);
 
     // Track session
     const session: UserSession = {
@@ -319,7 +308,7 @@ export class ShadowRelay extends EventEmitter {
     await this.executeTrade(copier.copierChannelId, copierTrade);
 
     // Calculate P&L for fee tracking
-    const tradeCost = (copierAmount * copierTrade.price) / BigInt(10 ** 18);
+    const tradeCost = (copierAmount * copierTrade.price) / (10n ** 18n);
     const copierPnL = copierTrade.action === TradeAction.BUY ? -tradeCost : tradeCost; // Simplified
 
     // Get current Yellow state for hashes
@@ -343,11 +332,30 @@ export class ShadowRelay extends EventEmitter {
       copierStateHash: '0x' + '0'.repeat(64),
     });
 
-    // Check drawdown
-    const currentDrawdown = this.riskManager.calculateDrawdown(copier);
-    if (currentDrawdown > copier.maxDrawdown) {
-      console.warn(`   ⚠️  Copier ${copier.copierAddress} exceeded max drawdown!`);
-      await this.handleDrawdownBreach(copier.copierChannelId);
+    // Check drawdown - TODO: Fix type mismatch between CopyRelationship and CopierSession
+    try {
+      // Convert CopyRelationship to CopierSession format for drawdown check
+      const copierSession = {
+        sessionId: copier.copierChannelId,
+        copierAddress: copier.copierAddress,
+        leaderAddress: copier.leaderAddress,
+        depositAmount: copier.copierInitialDeposit,
+        maxDrawdown: copier.maxDrawdown,
+        currentDrawdown: 0,
+        yellowChannelId: copier.copierChannelId,
+        isActive: copier.isActive,
+        startValue: copier.copierInitialDeposit,
+        currentValue: copier.copierCurrentBalance,
+        startedAt: copier.subscribedAt,
+      };
+
+      const currentDrawdown = this.riskManager.calculateDrawdown(copierSession);
+      if (currentDrawdown > copier.maxDrawdown) {
+        console.warn(`   ⚠️  Copier ${copier.copierAddress} exceeded max drawdown!`);
+        await this.handleDrawdownBreach(copier.copierChannelId);
+      }
+    } catch (error) {
+      console.error('   ⚠️  Error calculating drawdown:', error);
     }
   }
 
@@ -356,10 +364,30 @@ export class ShadowRelay extends EventEmitter {
    */
   private async verifyTradeSignature(signedTrade: SignedTrade): Promise<boolean> {
     try {
-      const message = JSON.stringify(signedTrade.trade);
-      const recoveredAddress = ethers.verifyMessage(message, signedTrade.signature);
+      // Reconstruct the exact message that was signed on the frontend
+      // Frontend signs: { tradeId, asset, action, amount, price, timestamp }
+      // Note: amount and price are strings on frontend, but BigInt here - convert back to string
+      const messageToVerify = JSON.stringify({
+        tradeId: signedTrade.trade.tradeId,
+        asset: signedTrade.trade.asset,
+        action: signedTrade.trade.action,
+        amount: signedTrade.trade.amount.toString(),
+        price: signedTrade.trade.price.toString(),
+        timestamp: signedTrade.trade.timestamp,
+      });
+
+      console.log('🔍 Verifying signature:');
+      console.log('   Message:', messageToVerify);
+      console.log('   Signature:', signedTrade.signature);
+      console.log('   Expected signer:', signedTrade.signer);
+
+      const recoveredAddress = ethers.verifyMessage(messageToVerify, signedTrade.signature);
+      console.log('   Recovered address:', recoveredAddress);
+      console.log('   Match:', recoveredAddress.toLowerCase() === signedTrade.signer.toLowerCase());
+
       return recoveredAddress.toLowerCase() === signedTrade.signer.toLowerCase();
     } catch (error) {
+      console.error('Signature verification error:', error);
       return false;
     }
   }
@@ -380,7 +408,19 @@ export class ShadowRelay extends EventEmitter {
    * Get leader statistics
    */
   async getLeaderStats(leaderAddress: string) {
-    return await db.getLeaderStats(leaderAddress);
+    const stats = await db.getLeaderStats(leaderAddress);
+    const metadata = this.leaderMetadata.get(leaderAddress);
+
+    // Enrich stats with ENS name if available
+    if (metadata) {
+      return {
+        ...stats,
+        ensName: metadata.ensName,
+        performanceFee: metadata.performanceFee
+      };
+    }
+
+    return stats;
   }
 
   /**
@@ -402,6 +442,20 @@ export class ShadowRelay extends EventEmitter {
    */
   getSession(userAddress: string): UserSession | undefined {
     return this.userSessions.get(userAddress);
+  }
+
+  /**
+   * Get all registered leaders
+   */
+  getAllLeaders(): string[] {
+    return Array.from(this.leaderAddresses);
+  }
+
+  /**
+   * Check if an address is a registered leader
+   */
+  isLeaderRegistered(address: string): boolean {
+    return this.leaderAddresses.has(address);
   }
 
   /**

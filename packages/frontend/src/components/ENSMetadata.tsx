@@ -41,7 +41,7 @@ export default function ENSMetadata({ ensName, address, demoMode = false }: ENSM
           description: "Experienced DeFi trader specializing in MEV-protected arbitrage strategies. Consistent 15% monthly returns with risk management protocols.",
           twitter: "shadowtrader",
           discord: "shadowtrader#1337",
-          website: "https://shadow-trader.eth.limo",
+          website: "https://shadow.trading",
           strategy: "DeFi Arbitrage & Market Making",
           riskLevel: "Moderate",
           assets: "ETH, WBTC, USDC, DeFi Blue Chips",

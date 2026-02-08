@@ -349,7 +349,12 @@ export class Database {
         const rel = this.copyRelationships.get(t.copyRelationshipId);
         return rel?.leaderAddress === leaderAddress;
       })
-      .reduce((sum, t) => sum + BigInt(parseFloat(t.amount) * parseFloat(t.price)), 0n);
+      .reduce((sum, t) => {
+        // Calculate volume as float, then convert to USDC base units (6 decimals)
+        const volumeFloat = parseFloat(t.amount) * parseFloat(t.price);
+        const volumeUsdc = Math.floor(volumeFloat * 1000000); // Convert to integer
+        return sum + BigInt(volumeUsdc);
+      }, 0n);
 
     const averageCopierROI =
       relationships.length > 0

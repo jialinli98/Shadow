@@ -30,34 +30,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   Home
                 </Link>
                 <Link
-                  to="/leaderboard"
+                  to="/dashboard"
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive('/leaderboard')
+                    isActive('/dashboard') || isActive('/leader') || isActive('/copier')
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                   }`}
                 >
-                  Leaderboard
+                  Dashboard
                 </Link>
                 <Link
-                  to="/leader"
+                  to="/browse"
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive('/leader')
+                    isActive('/browse') || isActive('/leaderboard')
                       ? 'bg-gray-700 text-white'
                       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                   }`}
                 >
-                  Leader Dashboard
-                </Link>
-                <Link
-                  to="/copier"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive('/copier')
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  Copier Dashboard
+                  Browse Leaders
                 </Link>
               </div>
             </div>
@@ -73,9 +63,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       <footer className="mt-auto border-t border-gray-700 bg-gray-800/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-center text-gray-400 text-sm">
-            Shadow - Private Copy Trading on Yellow Network | Built for ETH Global HackMoney 2026
-          </p>
         </div>
       </footer>
     </div>

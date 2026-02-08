@@ -9,6 +9,7 @@ import { SettlementService } from '../services/SettlementService';
 import { OracleService } from '../services/OracleService';
 import { MockMarketMaker } from '../services/MockMarketMaker';
 import { TradeIntent, TradeAction } from '../types';
+import { db } from '../db';
 
 /**
  * Create REST API router
@@ -31,7 +32,7 @@ export function createRestAPI(
    */
   router.post('/leaders/register', async (req, res) => {
     try {
-      const { address, ensName, performanceFee } = req.body;
+      const { address, ensName, performanceFee, collateral } = req.body;
 
       // Validate inputs
       if (!address || !ensName) {
@@ -42,11 +43,18 @@ export function createRestAPI(
         return res.status(400).json({ error: 'Performance fee must be between 0 and 0.5 (50%)' });
       }
 
+      // Register the leader
       await shadowRelay.registerLeader(address, ensName, performanceFee);
+
+      // Open a Yellow Network session for the leader (default 10,000 USDC if not specified)
+      const leaderCollateral = collateral ? BigInt(collateral) : BigInt(10000) * BigInt(1000000); // 10k USDC (6 decimals)
+      const channelId = await shadowRelay.openSession(address, leaderCollateral);
 
       res.json({
         success: true,
         leader: { address, ensName, performanceFee },
+        channelId,
+        collateral: leaderCollateral.toString(),
       });
     } catch (error: any) {
       console.error('Error registering leader:', error);
@@ -61,11 +69,13 @@ export function createRestAPI(
   router.get('/leaders/:address', async (req, res) => {
     try {
       const { address } = req.params;
-      const stats = await shadowRelay.getLeaderStats(address);
 
-      if (!stats) {
+      // Check if leader is registered
+      if (!shadowRelay.isLeaderRegistered(address)) {
         return res.status(404).json({ error: 'Leader not found' });
       }
+
+      const stats = await shadowRelay.getLeaderStats(address);
 
       // Convert BigInt values to strings for JSON serialization
       res.json({
@@ -87,15 +97,14 @@ export function createRestAPI(
    */
   router.get('/leaders', async (req, res) => {
     try {
-      // Get all sessions and filter for leaders
-      const sessions = shadowRelay.getAllSessions();
-      const leaders = sessions.filter(s => s.userAddress); // Simplified
+      // Get all registered leader addresses
+      const leaderAddresses = shadowRelay.getAllLeaders();
 
       // Get stats for each leader
       const leaderStats = await Promise.all(
-        leaders.map(async (session) => {
+        leaderAddresses.map(async (address) => {
           try {
-            return await shadowRelay.getLeaderStats(session.userAddress);
+            return await shadowRelay.getLeaderStats(address);
           } catch {
             return null;
           }
@@ -304,7 +313,7 @@ export function createRestAPI(
         tokenAddress: trade.tokenAddress || '0x0000000000000000000000000000000000000000',
         amount: BigInt(trade.amount),
         price: BigInt(trade.price),
-        timestamp: Date.now(),
+        timestamp: trade.timestamp || Date.now(), // Use timestamp from frontend (what was signed)
         yellowChannelId: trade.yellowChannelId || '',
         signature,
       };
@@ -324,6 +333,66 @@ export function createRestAPI(
       });
     } catch (error: any) {
       console.error('Error executing trade:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * Get trades for a user (leader or copier)
+   * GET /api/trades/:address
+   */
+  router.get('/trades/:address', async (req, res) => {
+    try {
+      const { address } = req.params;
+
+      // Get all copy relationships for this user (as leader or copier)
+      const asLeader = await db.getCopyRelationshipsForLeader(address);
+      const asCopier = await db.getCopyRelationshipsForCopier(address);
+
+      const trades = [];
+
+      // Get trades where user is leader
+      for (const relationship of asLeader) {
+        const relationshipTrades = await db.getTradeHistory(relationship.id);
+        for (const trade of relationshipTrades) {
+          trades.push({
+            tradeId: trade.id,
+            timestamp: trade.timestamp,
+            asset: trade.asset,
+            side: trade.side,
+            amount: trade.amount,
+            price: trade.price,
+            role: 'leader',
+            copierAddress: relationship.copierAddress,
+            channelId: trade.leaderChannelId,
+          });
+        }
+      }
+
+      // Get trades where user is copier
+      for (const relationship of asCopier) {
+        const relationshipTrades = await db.getTradeHistory(relationship.id);
+        for (const trade of relationshipTrades) {
+          trades.push({
+            tradeId: trade.id,
+            timestamp: trade.timestamp,
+            asset: trade.asset,
+            side: trade.side,
+            amount: trade.amount,
+            price: trade.price,
+            role: 'copier',
+            leaderAddress: relationship.leaderAddress,
+            channelId: trade.copierChannelId,
+          });
+        }
+      }
+
+      // Sort by timestamp (newest first)
+      trades.sort((a, b) => b.timestamp - a.timestamp);
+
+      res.json({ trades, total: trades.length });
+    } catch (error: any) {
+      console.error('Error fetching trades:', error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -456,6 +525,81 @@ export function createRestAPI(
       });
     } catch (error: any) {
       console.error('Error fetching MM exposure:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================================================
+  // STATE CHANNELS / TRADING SESSIONS
+  // ============================================================================
+
+  /**
+   * Get trading sessions for a user (leader or copier)
+   * GET /api/state-channels/:address
+   */
+  router.get('/state-channels/:address', async (req, res) => {
+    try {
+      const { address } = req.params;
+
+      // Get all relationships where user is either leader or copier
+      const asLeader = await db.getCopyRelationshipsForLeader(address);
+      const asCopier = await db.getCopyRelationshipsForCopier(address);
+
+      // Get session info from ShadowRelay
+      const leaderSession = shadowRelay.getSession(address);
+
+      // Build sessions array
+      const sessions = [];
+
+      // Add leader sessions (one per copier relationship)
+      for (const relationship of asLeader) {
+        const trades = await db.getTradeHistory(relationship.id);
+
+        // Calculate volume from trades
+        let volume = 0;
+        for (const trade of trades) {
+          const tradeValue = parseFloat(trade.amount) * parseFloat(trade.price);
+          volume += tradeValue;
+        }
+
+        sessions.push({
+          channelId: relationship.leaderChannelId,
+          status: relationship.isActive ? 'trading' : 'closed',
+          trades: trades.length,
+          volume: Math.floor(volume),
+          leaderBalance: leaderSession ? Number(leaderSession.collateral) / 1000000 : 0, // Convert from USDC (6 decimals)
+          copierBalance: Number(relationship.copierCurrentBalance) / 1000000,
+          openedAt: relationship.subscribedAt,
+        });
+      }
+
+      // Add copier sessions
+      for (const relationship of asCopier) {
+        const trades = await db.getTradeHistory(relationship.id);
+
+        // Calculate volume from trades
+        let volume = 0;
+        for (const trade of trades) {
+          const tradeValue = parseFloat(trade.amount) * parseFloat(trade.price);
+          volume += tradeValue;
+        }
+
+        const copierSession = shadowRelay.getSession(address);
+
+        sessions.push({
+          channelId: relationship.copierChannelId,
+          status: relationship.isActive ? 'trading' : 'closed',
+          trades: trades.length,
+          volume: Math.floor(volume),
+          leaderBalance: 0, // Copiers don't see leader balance
+          copierBalance: copierSession ? Number(copierSession.collateral) / 1000000 : 0,
+          openedAt: relationship.subscribedAt,
+        });
+      }
+
+      res.json(sessions);
+    } catch (error: any) {
+      console.error('Error fetching state channels:', error);
       res.status(500).json({ error: error.message });
     }
   });

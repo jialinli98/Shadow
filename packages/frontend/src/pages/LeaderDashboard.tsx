@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useAccount, useReadContract, useWriteContract } from 'wagmi'
-import { formatEther, parseEther } from 'viem'
+import { useAccount, useReadContract } from 'wagmi'
+import { formatEther } from 'viem'
 import { TrendingUp, Users, DollarSign, Activity } from 'lucide-react'
 import { leaderAPI } from '../services/api'
 import TradeExecutor from '../components/TradeExecutor'
@@ -18,6 +18,7 @@ export default function LeaderDashboard() {
   const [ensName, setEnsName] = useState('')
   const [performanceFee, setPerformanceFee] = useState(1500) // 15%
   const [minDeposit, setMinDeposit] = useState('500')
+  const [initialDeposit, setInitialDeposit] = useState('10000') // Leader's initial collateral
   const [leaderStats, setLeaderStats] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState({
@@ -27,20 +28,40 @@ export default function LeaderDashboard() {
     feesEarned: '0',
     totalTrades: 0,
   })
+  const [isRegistered, setIsRegistered] = useState(false)
+  const [checkingRegistration, setCheckingRegistration] = useState(true)
 
-  // Check if leader is registered
-  const { data: isRegistered } = useReadContract({
-    address: REGISTRY_ADDRESS,
-    abi: [{
-      name: 'isRegistered',
-      type: 'function',
-      stateMutability: 'view',
-      inputs: [{ name: 'leader', type: 'address' }],
-      outputs: [{ type: 'bool' }],
-    }],
-    functionName: 'isRegistered',
-    args: address ? [address] : undefined,
-  })
+  // Check if leader is registered via Shadow Relay API
+  useEffect(() => {
+    if (!address) {
+      setIsRegistered(false)
+      setCheckingRegistration(false)
+      return
+    }
+
+    const checkRegistration = async () => {
+      try {
+        setCheckingRegistration(true)
+        const response = await fetch(`http://localhost:3001/api/leaders/${address}`)
+
+        if (response.ok) {
+          // Leader exists in Shadow Relay
+          const data = await response.json()
+          setIsRegistered(true)
+          setEnsName(data.ensName || '')
+        } else {
+          setIsRegistered(false)
+        }
+      } catch (error) {
+        console.error('Failed to check registration:', error)
+        setIsRegistered(false)
+      } finally {
+        setCheckingRegistration(false)
+      }
+    }
+
+    checkRegistration()
+  }, [address])
 
   // Get leader profile if registered
   const { data: leaderProfile, isError: profileError, isLoading: profileLoading } = useReadContract({
@@ -67,10 +88,6 @@ export default function LeaderDashboard() {
     functionName: 'getLeader',
     args: address && isRegistered ? [address] : undefined,
   })
-
-
-  // Register leader
-  const { writeContract: registerLeader, isPending: isRegistering } = useWriteContract()
 
   // Fetch leader stats from new API
   useEffect(() => {
@@ -118,24 +135,43 @@ export default function LeaderDashboard() {
     if (!ensName || !address) return
 
     try {
-      registerLeader({
-        address: REGISTRY_ADDRESS,
-        abi: [{
-          name: 'registerLeader',
-          type: 'function',
-          stateMutability: 'nonpayable',
-          inputs: [
-            { name: 'ensName', type: 'string' },
-            { name: 'performanceFee', type: 'uint256' },
-            { name: 'minCopierDeposit', type: 'uint256' },
-          ],
-          outputs: [],
-        }],
-        functionName: 'registerLeader',
-        args: [ensName, BigInt(performanceFee), parseEther(minDeposit)],
+      setLoading(true)
+
+      // Register via Shadow Relay API
+      // Convert initial deposit to USDC (6 decimals)
+      const collateralUsdc = BigInt(initialDeposit) * BigInt(1000000)
+
+      const response = await fetch('http://localhost:3001/api/leaders/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address: address,
+          ensName: ensName,
+          performanceFee: performanceFee / 10000, // Convert basis points to decimal (1500 -> 0.15)
+          collateral: collateralUsdc.toString(),
+        }),
       })
-    } catch (error) {
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Registration failed')
+      }
+
+      const result = await response.json()
+      console.log('✅ Leader registered:', result)
+
+      // Update state to show dashboard
+      setIsRegistered(true)
+
+      // Show success message with session info
+      alert(`Successfully registered as ${ensName}!\n\nYellow Network Session: ${result.channelId}\nCollateral: ${initialDeposit} USDC`)
+    } catch (error: any) {
       console.error('Registration failed:', error)
+      alert(`Registration failed: ${error.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -144,6 +180,15 @@ export default function LeaderDashboard() {
       <div className="text-center py-20">
         <h2 className="text-2xl font-bold text-white mb-4">Connect Your Wallet</h2>
         <p className="text-gray-400">Please connect your wallet to access the Leader Dashboard</p>
+      </div>
+    )
+  }
+
+  if (checkingRegistration) {
+    return (
+      <div className="text-center py-20">
+        <h2 className="text-2xl font-bold text-white mb-4">Checking Registration...</h2>
+        <p className="text-gray-400">Please wait while we check your leader status</p>
       </div>
     )
   }
@@ -173,6 +218,22 @@ export default function LeaderDashboard() {
 
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
+                Initial Deposit (USDC)
+              </label>
+              <input
+                type="number"
+                value={initialDeposit}
+                onChange={(e) => setInitialDeposit(e.target.value)}
+                min="1000"
+                step="1000"
+                placeholder="10000"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="text-sm text-gray-400 mt-1">Your initial collateral to open a Yellow Network session</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Performance Fee: {(performanceFee / 100).toFixed(1)}%
               </label>
               <input
@@ -187,26 +248,12 @@ export default function LeaderDashboard() {
               <p className="text-sm text-gray-400 mt-1">You earn this % of copier profits (max 30%)</p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Minimum Copier Deposit (USDC)
-              </label>
-              <input
-                type="number"
-                value={minDeposit}
-                onChange={(e) => setMinDeposit(e.target.value)}
-                placeholder="500"
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
-              />
-              <p className="text-sm text-gray-400 mt-1">Minimum deposit required for copiers to follow you</p>
-            </div>
-
             <button
               onClick={handleRegister}
-              disabled={isRegistering || !ensName}
+              disabled={loading || !ensName || !initialDeposit || parseInt(initialDeposit) < 1000}
               className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-semibold hover:from-indigo-600 hover:to-purple-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isRegistering ? 'Registering...' : 'Register as Leader'}
+              {loading ? 'Registering...' : 'Register as Leader'}
             </button>
           </div>
         </div>
@@ -217,8 +264,7 @@ export default function LeaderDashboard() {
             <li>1. Register with your ENS name and set your performance fee</li>
             <li>2. Execute trades through Shadow relay (off-chain in Yellow state channels)</li>
             <li>3. Copiers automatically replicate your trades proportionally</li>
-            <li>4. Earn fees when your copiers profit (withdrawn anytime)</li>
-            <li>5. All trades settle via Uniswap V4 - only net position visible on-chain</li>
+            <li>4. When trades settle at the end, only net position is visible on chain</li>
           </ul>
         </div>
       </div>
@@ -271,7 +317,7 @@ export default function LeaderDashboard() {
         {loading ? (
           <p className="text-gray-400 text-center py-8">Loading copier stats...</p>
         ) : metrics.totalCopiers === 0 ? (
-          <p className="text-gray-400 text-center py-8">No copiers yet. Share your ENS profile to attract followers!</p>
+          <p className="text-gray-400 text-center py-8"></p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-gray-700/30 rounded-lg p-4">
